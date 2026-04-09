@@ -14,7 +14,7 @@ declare module "next-auth" {
 }
 
 export const authConfig: NextAuthConfig = {
-  secret: env.AUTH_SECRET ?? "development-auth-secret-change-me",
+  secret: env.AUTH_SECRET,
   session: {
     strategy: "jwt"
   },
