@@ -54,6 +54,11 @@ export type CategorySnapshotWithStreams = CategorySnapshotRecord & {
   streams: SnapshotStreamRecord[];
 };
 
+type SnapshotPagingInput = {
+  offset?: number;
+  limit?: number;
+};
+
 export type RefreshJobRecord = {
   id: string;
   filtersHash: string;
@@ -437,7 +442,7 @@ export function updateRefreshJob(
   return getRefreshJob(jobId) as RefreshJobRecord;
 }
 
-export function getLatestSnapshot(filtersHash: string) {
+export function getLatestSnapshot(filtersHash: string, paging?: SnapshotPagingInput) {
   const snapshot = getLocalDb()
     .prepare(`
       SELECT
@@ -463,11 +468,11 @@ export function getLatestSnapshot(filtersHash: string) {
 
   return {
     ...snapshot,
-    streams: getSnapshotStreams(snapshot.id)
+    streams: getSnapshotStreams(snapshot.id, paging)
   };
 }
 
-export function getSnapshotById(snapshotId: string) {
+export function getSnapshotById(snapshotId: string, paging?: SnapshotPagingInput) {
   const snapshot = getLocalDb()
     .prepare(`
       SELECT
@@ -492,11 +497,14 @@ export function getSnapshotById(snapshotId: string) {
 
   return {
     ...snapshot,
-    streams: getSnapshotStreams(snapshot.id)
+    streams: getSnapshotStreams(snapshot.id, paging)
   };
 }
 
-function getSnapshotStreams(snapshotId: string) {
+function getSnapshotStreams(snapshotId: string, paging?: SnapshotPagingInput) {
+  const offset = paging?.offset && paging.offset > 0 ? Math.floor(paging.offset) : 0;
+  const limit = paging?.limit && paging.limit > 0 ? Math.floor(paging.limit) : -1;
+
   return getLocalDb()
     .prepare(`
       SELECT
@@ -519,8 +527,10 @@ function getSnapshotStreams(snapshotId: string) {
       FROM snapshot_streams
       WHERE snapshot_id = ?
       ORDER BY rank ASC
+      LIMIT ?
+      OFFSET ?
     `)
-    .all(snapshotId) as SnapshotStreamRecord[];
+    .all(snapshotId, limit, offset) as SnapshotStreamRecord[];
 }
 
 export function createSnapshotWithStreams(input: {

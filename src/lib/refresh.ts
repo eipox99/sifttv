@@ -27,18 +27,21 @@ export function getCategoryFiltersHash(filter: CategoryFilter) {
   });
 }
 
-export async function getLatestSnapshot(filter: Pick<CategoryFilter, "categoryId" | "language">) {
+export async function getLatestSnapshot(
+  filter: Pick<CategoryFilter, "categoryId" | "language">,
+  paging?: { offset?: number; limit?: number }
+) {
   const filtersHash = getCategoryFiltersHash({
     categoryId: filter.categoryId,
     categoryName: "",
     language: filter.language
   });
 
-  return getLatestSnapshotRecord(filtersHash);
+  return getLatestSnapshotRecord(filtersHash, paging);
 }
 
-export async function getSnapshotById(snapshotId: string) {
-  return getSnapshotByIdRecord(snapshotId);
+export async function getSnapshotById(snapshotId: string, paging?: { offset?: number; limit?: number }) {
+  return getSnapshotByIdRecord(snapshotId, paging);
 }
 
 export async function createOrReuseRefreshJob(filter: CategoryFilter) {

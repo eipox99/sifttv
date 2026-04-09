@@ -6,6 +6,28 @@ import { getCategoryFiltersHash, getLatestSnapshot, getSnapshotById } from "@/li
 import { serializeSnapshotStream, serializeTwitchStream } from "@/lib/serializers";
 import { getStreamsByCategory } from "@/lib/twitch";
 
+function parsePositiveInteger(value: string | null, fallback: number, max?: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  if (typeof max === "number") {
+    return Math.min(parsed, max);
+  }
+
+  return parsed;
+}
+
+function parseNonNegativeInteger(value: string | null, fallback = 0) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ categoryId: string }> }
@@ -15,13 +37,16 @@ export async function GET(
   const language = request.nextUrl.searchParams.get("language") ?? undefined;
   const cursor = request.nextUrl.searchParams.get("cursor") ?? undefined;
   const snapshotId = request.nextUrl.searchParams.get("snapshotId") ?? undefined;
+  const limit = parsePositiveInteger(request.nextUrl.searchParams.get("limit"), 36, 100);
+  const offset = parseNonNegativeInteger(request.nextUrl.searchParams.get("offset"));
 
   try {
     if (sort === "popular") {
       const response = await getStreamsByCategory({
         categoryId,
         language,
-        cursor
+        cursor,
+        limit
       });
 
       return NextResponse.json({
@@ -36,8 +61,8 @@ export async function GET(
     }
 
     const snapshot = snapshotId
-      ? await getSnapshotById(snapshotId)
-      : await getLatestSnapshot({ categoryId, language });
+      ? await getSnapshotById(snapshotId, { offset, limit })
+      : await getLatestSnapshot({ categoryId, language }, { offset, limit });
 
     const activeJob = findActiveRefreshJob(
       getCategoryFiltersHash({
@@ -50,6 +75,8 @@ export async function GET(
     return NextResponse.json({
       sort,
       data: snapshot?.streams.map(serializeSnapshotStream) ?? [],
+      nextOffset:
+        snapshot && offset + snapshot.streams.length < snapshot.streamCount ? offset + snapshot.streams.length : null,
       snapshot: snapshot
         ? {
             id: snapshot.id,

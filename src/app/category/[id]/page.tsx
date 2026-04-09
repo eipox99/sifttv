@@ -1,6 +1,7 @@
 import { CategoryExplorer } from "@/components/category-explorer";
 import { OnboardingCard } from "@/components/onboarding-card";
 import { hasTwitchClientCredentials } from "@/lib/env";
+import { CATEGORY_STREAM_BATCH_SIZE } from "@/lib/pagination";
 import { serializeTwitchStream } from "@/lib/serializers";
 import { getGamesByIds, getStreamsByCategory } from "@/lib/twitch";
 
@@ -19,7 +20,8 @@ export default async function CategoryPage({
     const [categoryResponse, streamsResponse] = await Promise.all([
       getGamesByIds([id]),
       getStreamsByCategory({
-        categoryId: id
+        categoryId: id,
+        limit: CATEGORY_STREAM_BATCH_SIZE
       })
     ]);
 

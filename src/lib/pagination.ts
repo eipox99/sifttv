@@ -1,0 +1,1 @@
+export const CATEGORY_STREAM_BATCH_SIZE = 36;

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { StreamCard } from "@/components/stream-card";
 import { formatDateTime, formatLanguageLabel, normalizeLanguageCode } from "@/lib/formatters";
+import { CATEGORY_STREAM_BATCH_SIZE } from "@/lib/pagination";
 
 type StreamItem = {
   id: string;
@@ -79,14 +80,23 @@ export function CategoryExplorer({
   const [popularCursor, setPopularCursor] = useState(initialCursor);
   const [snapshotStreams, setSnapshotStreams] = useState<StreamItem[]>([]);
   const [snapshot, setSnapshot] = useState<SnapshotInfo | null>(null);
+  const [nextExactOffset, setNextExactOffset] = useState<number | null>(null);
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingExact, setLoadingExact] = useState(false);
+  const [loadingMorePopular, setLoadingMorePopular] = useState(false);
+  const [loadingMoreExact, setLoadingMoreExact] = useState(false);
   const [pendingRefresh, startRefreshTransition] = useTransition();
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const skipInitialPopularFetchRef = useRef(false);
+  const popularLoadInFlightRef = useRef(false);
+  const exactLoadInFlightRef = useRef(false);
   const activeStreams = useMemo(
     () => (sort === "popular" ? popularStreams : snapshotStreams),
     [popularStreams, snapshotStreams, sort]
   );
+  const hasMoreStreams = sort === "popular" ? Boolean(popularCursor) : nextExactOffset !== null;
+  const loadingMoreStreams = sort === "popular" ? loadingMorePopular : loadingMoreExact;
   const availableLanguages = useMemo(() => {
     const nextLanguages = new Set(discoveredLanguages);
     const currentLanguage = normalizeLanguageCode(language);
@@ -129,7 +139,7 @@ export function CategoryExplorer({
 
       setActiveJob(payload.job);
       if (payload.job.status === "COMPLETED") {
-        await loadExact(payload.job.snapshotId ?? undefined);
+        await loadExact({ snapshotId: payload.job.snapshotId ?? undefined });
       }
 
       if (payload.job.status === "FAILED") {
@@ -153,7 +163,7 @@ export function CategoryExplorer({
       return;
     }
 
-    void loadExact();
+    void loadExact({ reset: true });
   }, [sort, language]);
 
   useEffect(() => {
@@ -163,12 +173,21 @@ export function CategoryExplorer({
       return;
     }
 
+    if (!skipInitialPopularFetchRef.current && !language) {
+      skipInitialPopularFetchRef.current = true;
+      return;
+    }
+
     const params = new URLSearchParams({
-      sort: "popular"
+      sort: "popular",
+      limit: String(CATEGORY_STREAM_BATCH_SIZE)
     });
     if (language) {
       params.set("language", language);
     }
+
+    setError(null);
+    setLoadingMorePopular(false);
 
     fetch(`/api/categories/${categoryId}/streams?${params.toString()}`, {
       cache: "no-store"
@@ -199,19 +218,73 @@ export function CategoryExplorer({
     };
   }, [categoryId, language, sort]);
 
-  async function loadExact(snapshotId?: string) {
-    setLoadingExact(true);
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !hasMoreStreams || loadingMoreStreams || loadingExact) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) {
+          return;
+        }
+
+        if (sort === "popular") {
+          void loadMorePopular();
+          return;
+        }
+
+        void loadMoreExact();
+      },
+      {
+        rootMargin: "900px 0px"
+      }
+    );
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMoreStreams, loadingExact, loadingMoreStreams, sort, popularCursor, nextExactOffset]);
+
+  async function loadExact(options?: {
+    snapshotId?: string;
+    offset?: number;
+    append?: boolean;
+    reset?: boolean;
+  }) {
+    const append = options?.append ?? false;
+    if (append) {
+      if (exactLoadInFlightRef.current || nextExactOffset === null) {
+        return;
+      }
+      exactLoadInFlightRef.current = true;
+      setLoadingMoreExact(true);
+    } else {
+      setLoadingExact(true);
+      setSnapshotStreams([]);
+      setSnapshot(null);
+      setActiveJob(null);
+      setNextExactOffset(null);
+    }
+
     setError(null);
 
     try {
       const params = new URLSearchParams({
-        sort: "low_to_high_exact"
+        sort: "low_to_high_exact",
+        limit: String(CATEGORY_STREAM_BATCH_SIZE)
       });
       if (language) {
         params.set("language", language);
       }
-      if (snapshotId) {
-        params.set("snapshotId", snapshotId);
+      if (options?.snapshotId) {
+        params.set("snapshotId", options.snapshotId);
+      }
+      if (append) {
+        params.set("offset", String(options?.offset ?? nextExactOffset ?? 0));
       }
 
       const response = await fetch(`/api/categories/${categoryId}/streams?${params.toString()}`, {
@@ -224,43 +297,70 @@ export function CategoryExplorer({
       }
 
       const nextSnapshotStreams = payload.data ?? [];
-      setSnapshotStreams(nextSnapshotStreams);
+      setSnapshotStreams((current) => (append ? [...current, ...nextSnapshotStreams] : nextSnapshotStreams));
       setSnapshot(payload.snapshot);
       setActiveJob(payload.activeJob);
+      setNextExactOffset(payload.nextOffset ?? null);
       mergeDiscoveredLanguages(nextSnapshotStreams);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Failed to load exact snapshot.");
     } finally {
-      setLoadingExact(false);
+      if (append) {
+        exactLoadInFlightRef.current = false;
+        setLoadingMoreExact(false);
+      } else {
+        setLoadingExact(false);
+      }
     }
   }
 
   async function loadMorePopular() {
-    if (!popularCursor) {
+    if (!popularCursor || popularLoadInFlightRef.current) {
       return;
     }
 
+    popularLoadInFlightRef.current = true;
+    setLoadingMorePopular(true);
+
     const params = new URLSearchParams({
       sort: "popular",
-      cursor: popularCursor
+      cursor: popularCursor,
+      limit: String(CATEGORY_STREAM_BATCH_SIZE)
     });
     if (language) {
       params.set("language", language);
     }
 
-    const response = await fetch(`/api/categories/${categoryId}/streams?${params.toString()}`, {
-      cache: "no-store"
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      setError(payload.error ?? "Failed to load more streams.");
+    try {
+      const response = await fetch(`/api/categories/${categoryId}/streams?${params.toString()}`, {
+        cache: "no-store"
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setError(payload.error ?? "Failed to load more streams.");
+        return;
+      }
+
+      const nextStreams = payload.data ?? [];
+      setPopularStreams((current) => [...current, ...nextStreams]);
+      setPopularCursor(payload.cursor);
+      mergeDiscoveredLanguages(nextStreams);
+    } finally {
+      popularLoadInFlightRef.current = false;
+      setLoadingMorePopular(false);
+    }
+  }
+
+  async function loadMoreExact() {
+    if (nextExactOffset === null) {
       return;
     }
 
-    const nextStreams = payload.data ?? [];
-    setPopularStreams((current) => [...current, ...nextStreams]);
-    setPopularCursor(payload.cursor);
-    mergeDiscoveredLanguages(nextStreams);
+    await loadExact({
+      snapshotId: snapshot?.id ?? undefined,
+      offset: nextExactOffset,
+      append: true
+    });
   }
 
   return (
@@ -331,7 +431,7 @@ export function CategoryExplorer({
 
                 setSort("low_to_high_exact");
                 setActiveJob(payload.job);
-                await loadExact();
+                await loadExact({ reset: true });
               })
             }
           >
@@ -373,18 +473,22 @@ export function CategoryExplorer({
         ))}
       </div>
 
+      {activeStreams.length > 0 ? (
+        <div ref={loadMoreRef} className="stream-load-sentinel">
+          {loadingMoreStreams
+            ? "Loading more streams"
+            : hasMoreStreams
+              ? "Scroll to load more"
+              : "All loaded"}
+        </div>
+      ) : null}
+
       {activeStreams.length === 0 ? (
         <div className="panel muted">
           {sort === "popular"
             ? "No live streams matched this filter."
             : "No exact snapshot is available yet for this filter."}
         </div>
-      ) : null}
-
-      {sort === "popular" && popularCursor ? (
-        <button className="button button-secondary" onClick={() => void loadMorePopular()}>
-          Load more popular streams
-        </button>
       ) : null}
     </section>
   );

@@ -219,13 +219,14 @@ export async function getStreamsByCategory(input: {
   language?: string | null;
   cursor?: string;
   token?: string;
+  limit?: number;
 }) {
   return twitchApiRequest<TwitchResponse<TwitchStream>>("/streams", {
     token: input.token,
     query: {
       game_id: input.categoryId,
       language: input.language,
-      first: 100,
+      first: input.limit ?? 100,
       after: input.cursor
     }
   });
