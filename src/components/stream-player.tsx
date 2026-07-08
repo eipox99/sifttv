@@ -136,6 +136,12 @@ const FOCUSABLE_SELECTOR =
 
 const LIVE_EDGE_THRESHOLD_SECONDS = 8;
 
+// How long playback may be frozen (currentTime not advancing while not paused)
+// before we treat the stream as offline. A true freeze means the buffer has
+// drained with no new data — i.e. the streamer stopped — as opposed to merely
+// watching behind the live edge, where currentTime keeps advancing.
+const OFFLINE_STALL_SECONDS = 12;
+
 const LOW_LATENCY_SYNC_DURATION_COUNT = 2;
 const LOW_LATENCY_MAX_PLAYBACK_RATE = 1.5;
 const LOW_LATENCY_MAX_LATENCY_DURATION_COUNT = 5;
@@ -172,6 +178,8 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
   autoFallbackRef.current = lowLatencyAutoFallback;
   const [activeEngine, setActiveEngine] = useState<PlaybackEngine>(playbackEngine);
   const [state, setState] = useState<PlaybackState>({ status: "loading" });
+  const statusRef = useRef<PlaybackState["status"]>("loading");
+  statusRef.current = state.status;
   const [chatUrl, setChatUrl] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(autoOpenChat);
   const [chatLoggedIn, setChatLoggedIn] = useState(chatAutoLogin);
@@ -187,6 +195,7 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
   );
   const [retryKey, setRetryKey] = useState(0);
   const [isLive, setIsLive] = useState(false);
+  const lastProgressRef = useRef<{ time: number; at: number } | null>(null);
   const [viewerCount, setViewerCount] = useState<number | null>(null);
   const [videoHeight, setVideoHeight] = useState<number | null>(null);
   // Session-only catch-up state, seeded from the saved default each time the player opens.
@@ -354,7 +363,9 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
     };
   }, [target.login]);
 
-  // Auto-retry when stream comes back after going offline
+  // While in the error/offline state, periodically re-attempt to resolve the
+  // stream. A successful resolve means the streamer is actually back on air, so
+  // we rebuild the player. This tests real playability rather than viewer count.
   useEffect(() => {
     if (state.status !== "error") {
       return;
@@ -366,22 +377,18 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
     const check = async () => {
       if (cancelled) return;
       try {
-        const response = await fetch(`/api/streams/${target.login}/info`, { cache: "no-store" });
-        if (!response.ok || cancelled) return;
-        const data = (await response.json()) as { viewerCount?: number | null };
+        const response = await fetch(
+          `/api/streams/${target.login}/playback?quality=${encodeURIComponent(quality)}`,
+          { cache: "no-store" }
+        );
         if (cancelled) return;
-
-        if (typeof data.viewerCount === "number") {
+        // 200 => streamlink resolved a live stream, so the channel is back up.
+        // Anything else (e.g. 409 offline) => keep waiting and retrying.
+        if (response.ok) {
           setRetryKey((key) => key + 1);
-        } else {
-          setState((current) =>
-            current.status === "error" && current.message !== "Streamer went offline"
-              ? { status: "error", message: "Streamer went offline" }
-              : current
-          );
         }
       } catch {
-        // transient
+        // transient network issue; keep waiting
       }
     };
 
@@ -392,7 +399,7 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
       cancelled = true;
       if (interval !== undefined) clearInterval(interval);
     };
-  }, [state.status, target.login]);
+  }, [state.status, target.login, quality]);
 
   useEffect(() => {
     setCredentiallessOk(credentiallessSupported());
@@ -624,18 +631,45 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
     }
 
     const update = () => {
+      // Stream reached the end of its manifest (HLS ENDLIST) — e.g. the Twitch
+      // reconnect slate finished, or the streamer stopped. `ended` is only true
+      // here, never for a user pause, so treat it as offline and hand off to the
+      // reconnect loop.
+      if (video.ended) {
+        setIsLive(false);
+        if (statusRef.current === "playing") {
+          lastProgressRef.current = null;
+          setState({ status: "error", message: "Streamer went offline" });
+        }
+        return;
+      }
+
       if (video.paused) {
         setIsLive(false);
+        lastProgressRef.current = null;
         return;
       }
 
       const liveEdge = getLiveEdge(video, hlsRef.current);
-      if (liveEdge === null) {
-        setIsLive(false);
-        return;
-      }
+      const live = liveEdge !== null && liveEdge - video.currentTime <= LIVE_EDGE_THRESHOLD_SECONDS;
+      setIsLive(live);
 
-      setIsLive(liveEdge - video.currentTime <= LIVE_EDGE_THRESHOLD_SECONDS);
+      // Offline detection: if currentTime stops advancing while we're not paused,
+      // the buffer has drained with no new data — the streamer went offline.
+      // (Merely being behind the live edge keeps currentTime advancing, so this
+      // won't false-trigger when watching behind live.)
+      const now = Date.now();
+      const currentTime = video.currentTime;
+      const prev = lastProgressRef.current;
+      if (!prev || currentTime > prev.time + 0.25) {
+        lastProgressRef.current = { time: currentTime, at: now };
+      } else if (
+        statusRef.current === "playing" &&
+        now - prev.at >= OFFLINE_STALL_SECONDS * 1000
+      ) {
+        lastProgressRef.current = null;
+        setState({ status: "error", message: "Streamer went offline" });
+      }
     };
 
     const events: Array<keyof HTMLMediaElementEventMap> = [
