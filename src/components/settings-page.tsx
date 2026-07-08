@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { usePreferences } from "@/components/preferences-store";
 import type { PlaybackEngine } from "@/lib/preferences";
 
@@ -16,6 +18,31 @@ const ENGINE_OPTIONS: Array<{ value: PlaybackEngine; label: string; description:
     description: "Plays Twitch's HLS stream directly with hls.js. Most reliable, ~4-10s behind live."
   }
 ];
+
+function SettingRow({
+  label,
+  description,
+  checked,
+  onChange
+}: {
+  label: string;
+  description: ReactNode;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="settings-row">
+      <span className="settings-row-text">
+        <span className="settings-row-label">{label}</span>
+        <span className="settings-row-desc">{description}</span>
+      </span>
+      <span className="switch">
+        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+        <span className="switch-slider" />
+      </span>
+    </label>
+  );
+}
 
 export function SettingsPage() {
   const {
@@ -41,151 +68,111 @@ export function SettingsPage() {
     <section className="stack-lg">
       <div className="panel">
         <p className="eyebrow">Settings</p>
-        <h1>Playback</h1>
-        <p className="muted">Choose how streams are played inside the app. Changes apply the next time you open a stream.</p>
-      </div>
-
-      <div className="stack-md">
-        <div>
-          <h2>Default player</h2>
-          <p className="muted">The engine used when you open a stream in the in-app player.</p>
-        </div>
-        <div className="settings-options">
-          {ENGINE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`settings-option${playbackEngine === option.value ? " is-selected" : ""}`}
-              aria-pressed={playbackEngine === option.value}
-              onClick={() => setPlaybackEngine(option.value)}
-            >
-              <span className="settings-option-title">
-                {option.label}
-                {option.value === "lowlatency" ? <span className="pill settings-default-pill">Default</span> : null}
-              </span>
-              <span className="settings-option-desc">{option.description}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="stack-md">
-        <div>
-          <h2>Low-latency fallback</h2>
-          <p className="muted">
-            If the low-latency player fails to start or errors mid-stream, automatically fall back to the HLS player.
-          </p>
-        </div>
-        <label className="settings-toggle">
-          <input
-            type="checkbox"
-            checked={lowLatencyAutoFallback}
-            onChange={(event) => setLowLatencyAutoFallback(event.target.checked)}
-          />
-          <span>Auto-fallback to HLS on error</span>
-        </label>
-      </div>
-
-      <div className="stack-md">
-        <div>
-          <h2>Low-latency catch-up</h2>
-          <p className="muted">
-            Sets the default for the low-latency (mpegts) player: when playback drifts behind, gradually speed up — and
-            skip ahead if it falls far behind — to stay near real time. Turn off for a steadier buffer that may sit
-            further behind live. You can still override this per-stream with the Catch-up button in the player.
-          </p>
-        </div>
-        <label className="settings-toggle">
-          <input
-            type="checkbox"
-            checked={lowLatencyCatchUp}
-            onChange={(event) => setLowLatencyCatchUp(event.target.checked)}
-          />
-          <span>Catch up to the live edge by default</span>
-        </label>
-      </div>
-
-      <div className="stack-md">
-        <div>
-          <h2>Chat</h2>
-          <p className="muted">
-            Automatically open Twitch chat next to the stream when you start watching. When off, chat is not loaded at
-            all (so you are not connected to the channel&apos;s chat), and you can open it any time from the button in
-            the player.
-          </p>
-        </div>
-        <label className="settings-toggle">
-          <input
-            type="checkbox"
-            checked={autoOpenChat}
-            onChange={(event) => setAutoOpenChat(event.target.checked)}
-          />
-          <span>Open chat automatically with the stream</span>
-        </label>
-        <label className="settings-toggle">
-          <input
-            type="checkbox"
-            checked={chatAutoLogin}
-            onChange={(event) => setChatAutoLogin(event.target.checked)}
-          />
-          <span>Auto login to chat</span>
-        </label>
+        <h1>Settings</h1>
         <p className="muted">
-          When off, chat opens anonymously (read-only) using your Twitch session&apos;s logged-out view, so you are not
-          shown as watching. Use the &quot;Log in to chat&quot; button in the player when you want to chat as yourself.
+          Personalize playback, chat, and browsing. Playback changes apply the next time you open a stream.
         </p>
       </div>
 
-      <div className="stack-md">
-        <div>
-          <h2>Hover preview</h2>
-          <p className="muted">
-            Shows a larger thumbnail preview when hovering over a stream card.
-          </p>
+      <div className="panel settings-group">
+        <div className="settings-group-header">
+          <h2>Playback</h2>
+          <p className="muted">How streams are played inside the in-app player.</p>
         </div>
-        <label className="settings-toggle">
-          <input
-            type="checkbox"
-            checked={hoverPreview}
-            onChange={(event) => setHoverPreview(event.target.checked)}
-          />
-          <span>Show preview thumbnail on hover</span>
-        </label>
-      </div>
 
-      <div className="stack-md">
-        <div>
-          <h2>mpegts low latency</h2>
-          <p className="muted">
-            Passes <code>--twitch-low-latency</code> to streamlink when using the mpegts player. Reduces delay but may
-            cause more buffering. You can also toggle this per-session from the player.
-          </p>
+        <div className="settings-field">
+          <span className="settings-field-label">Default player</span>
+          <span className="settings-field-desc">The engine used when you open a stream.</span>
+          <div className="settings-options">
+            {ENGINE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`settings-option${playbackEngine === option.value ? " is-selected" : ""}`}
+                aria-pressed={playbackEngine === option.value}
+                onClick={() => setPlaybackEngine(option.value)}
+              >
+                <span className="settings-option-title">
+                  {option.label}
+                  {option.value === "lowlatency" ? (
+                    <span className="pill settings-default-pill">Default</span>
+                  ) : null}
+                </span>
+                <span className="settings-option-desc">{option.description}</span>
+              </button>
+            ))}
+          </div>
         </div>
-        <label className="settings-toggle">
-          <input
-            type="checkbox"
+
+        <div className="settings-rows">
+          <SettingRow
+            label="Auto-fallback to HLS on error"
+            description="If the low-latency player fails to start or errors mid-stream, automatically switch to the HLS player."
+            checked={lowLatencyAutoFallback}
+            onChange={setLowLatencyAutoFallback}
+          />
+          <SettingRow
+            label="Catch up to the live edge by default"
+            description="For the low-latency (mpegts) player: when playback drifts behind, gradually speed up — and skip ahead if it falls far behind — to stay near real time. You can still override this per-stream in the player."
+            checked={lowLatencyCatchUp}
+            onChange={setLowLatencyCatchUp}
+          />
+          <SettingRow
+            label="Low-latency mode for mpegts"
+            description={
+              <>
+                Passes <code>--twitch-low-latency</code> to Streamlink when using the mpegts player. Reduces delay but
+                may cause more buffering. Also toggleable per-session in the player.
+              </>
+            }
             checked={mpegtsLowLatency}
-            onChange={(event) => setMpegtsLowLatency(event.target.checked)}
+            onChange={setMpegtsLowLatency}
           />
-          <span>Enable low-latency mode for mpegts</span>
-        </label>
+        </div>
       </div>
 
-      <div className="stack-md">
-        <div>
-          <h2>Open in new tab</h2>
-          <p className="muted">
-            When enabled, clicking a stream card opens the player in a new browser tab instead of the in-page overlay.
-          </p>
+      <div className="panel settings-group">
+        <div className="settings-group-header">
+          <h2>Chat</h2>
+          <p className="muted">Twitch chat behavior alongside the stream.</p>
         </div>
-        <label className="settings-toggle">
-          <input
-            type="checkbox"
-            checked={openInNewTab}
-            onChange={(event) => setOpenInNewTab(event.target.checked)}
+
+        <div className="settings-rows">
+          <SettingRow
+            label="Open chat automatically"
+            description="Open Twitch chat next to the stream when you start watching. When off, chat isn't loaded at all — so you aren't connected to the channel's chat — and you can open it any time from the player."
+            checked={autoOpenChat}
+            onChange={setAutoOpenChat}
           />
-          <span>Open streams in a new tab</span>
-        </label>
+          <SettingRow
+            label="Auto login to chat"
+            description="When off, chat opens anonymously (read-only) so you aren't shown as watching. Use the “Log in to chat” button in the player when you want to chat as yourself."
+            checked={chatAutoLogin}
+            onChange={setChatAutoLogin}
+          />
+        </div>
+      </div>
+
+      <div className="panel settings-group">
+        <div className="settings-group-header">
+          <h2>Browsing</h2>
+          <p className="muted">How stream cards behave while browsing.</p>
+        </div>
+
+        <div className="settings-rows">
+          <SettingRow
+            label="Show preview thumbnail on hover"
+            description="Shows a larger thumbnail preview when hovering over a stream card's thumbnail."
+            checked={hoverPreview}
+            onChange={setHoverPreview}
+          />
+          <SettingRow
+            label="Open streams in a new tab"
+            description="Clicking a stream card opens the player in a new browser tab instead of the in-page overlay."
+            checked={openInNewTab}
+            onChange={setOpenInNewTab}
+          />
+        </div>
       </div>
     </section>
   );

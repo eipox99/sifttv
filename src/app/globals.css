@@ -748,6 +748,12 @@ h3 {
   box-shadow: none;
 }
 
+.sidebar-heading {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin: 0;
+}
+
 .sidebar-empty {
   display: grid;
   gap: 12px;
@@ -1289,17 +1295,113 @@ h3 {
   line-height: 1.4;
 }
 
-.settings-toggle {
+/* Settings page — grouped sections */
+.settings-group {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-group-header {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-field {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-field-label {
+  font-family: var(--font-display);
+  font-size: 1rem;
+}
+
+.settings-field-desc {
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  margin-bottom: 4px;
+}
+
+.settings-rows {
+  display: grid;
+}
+
+.settings-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
   cursor: pointer;
+}
+
+.settings-rows .settings-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.settings-row-text {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-row-label {
   font-size: 0.95rem;
 }
 
-.settings-toggle input {
+.settings-row-desc {
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+/* Toggle switch */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 42px;
+  height: 24px;
+  margin-top: 2px;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink-soft) 35%, transparent);
+  border-radius: 999px;
+  transition: background 160ms ease;
+}
+
+.switch-slider::before {
+  content: "";
+  position: absolute;
   width: 18px;
   height: 18px;
-  accent-color: var(--accent-2);
-  cursor: pointer;
+  left: 3px;
+  top: 3px;
+  background: #f6f8fc;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 160ms ease;
+}
+
+.switch input:checked + .switch-slider {
+  background: var(--accent-2);
+}
+
+.switch input:checked + .switch-slider::before {
+  transform: translateX(18px);
+}
+
+.switch input:focus-visible + .switch-slider {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
 }

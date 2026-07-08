@@ -229,7 +229,7 @@ export function AppSidebar({ authReady }: AppSidebarProps) {
     <aside className="app-sidebar">
       <div className="panel sidebar-panel stack-md">
         <div>
-          <h2>Followed and favorites</h2>
+          <h2 className="sidebar-heading">For you</h2>
         </div>
 
         {!authReady ? (

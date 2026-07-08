@@ -144,6 +144,9 @@ const OFFLINE_STALL_SECONDS = 12;
 
 const PLAYER_VOLUME_KEY = "sifttv:player-volume";
 
+// Re-render cadence for the live stream-duration display.
+const DURATION_TICK_MS = 30_000;
+
 const LOW_LATENCY_SYNC_DURATION_COUNT = 2;
 const LOW_LATENCY_MAX_PLAYBACK_RATE = 1.5;
 const LOW_LATENCY_MAX_LATENCY_DURATION_COUNT = 5;
@@ -312,6 +315,17 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
     target.thumbnailUrl
   ]);
 
+  // Tick every 30s so the displayed stream duration stays current. The duration
+  // is derived from startedAt at render time, so a periodic re-render is enough.
+  const [, setDurationTick] = useState(0);
+  useEffect(() => {
+    if (!meta.startedAt) {
+      return;
+    }
+    const interval = window.setInterval(() => setDurationTick((n) => n + 1), DURATION_TICK_MS);
+    return () => window.clearInterval(interval);
+  }, [meta.startedAt]);
+
   useEffect(() => {
     const parent = window.location.hostname;
     setChatUrl(
@@ -347,12 +361,24 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
         if (!response.ok) {
           return;
         }
-        const data = (await response.json()) as { viewerCount?: number | null };
-        if (!cancelled) {
-          setViewerCount(typeof data.viewerCount === "number" ? data.viewerCount : null);
+        const data = (await response.json()) as {
+          viewerCount?: number | null;
+          startedAt?: string | null;
+        };
+        if (cancelled) {
+          return;
+        }
+        setViewerCount(typeof data.viewerCount === "number" ? data.viewerCount : null);
+        // Refresh the start time too (streams can crash/restart, and Twitch
+        // resets uptime after 48h). Only update state when it actually changes.
+        if (data.startedAt) {
+          const nextStarted = data.startedAt;
+          setMeta((current) =>
+            current.startedAt === nextStarted ? current : { ...current, startedAt: nextStarted }
+          );
         }
       } catch {
-        // transient failure; keep the last known count
+        // transient failure; keep the last known values
       }
     };
 
