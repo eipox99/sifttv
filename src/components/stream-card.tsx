@@ -68,12 +68,7 @@ export function StreamCard(props: StreamCardProps) {
   }, []);
 
   return (
-    <div
-      className="stream-card-wrap"
-      ref={wrapRef}
-      onMouseEnter={showPreview}
-      onMouseLeave={hidePreview}
-    >
+    <div className="stream-card-wrap" ref={wrapRef}>
       <article className="stream-card">
         <WatchOverlay
           login={props.login}
@@ -85,7 +80,7 @@ export function StreamCard(props: StreamCardProps) {
           thumbnailUrl={props.thumbnailUrl}
           url={props.url}
         />
-        <div className="stream-thumb-frame">
+        <div className="stream-thumb-frame" onMouseEnter={showPreview} onMouseLeave={hidePreview}>
           <img src={props.thumbnailUrl} alt={props.title} className="stream-thumb" />
           {typeof props.viewerCount === "number" ? (
             <span className="viewer-chip stream-thumb-chip">{formatViewerCount(props.viewerCount)} viewers</span>
