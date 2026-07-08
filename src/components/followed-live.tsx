@@ -1,79 +1,137 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { ChannelSortSelect } from "@/components/channel-sort-select";
 import { StreamCard } from "@/components/stream-card";
+import { fetchSharedJson } from "@/lib/client-fetch";
+import { DEFAULT_CHANNEL_SORT, sortChannels, type ChannelSortKey } from "@/lib/channel-sort";
 
-type StreamItem = {
+type FollowedItem = {
   id: string;
   channelId: string;
   login: string;
   displayName: string;
-  title: string;
-  viewerCount: number;
-  startedAtLabel: string;
-  language: string;
+  title: string | null;
+  viewerCount: number | null;
+  startedAt: string | null;
+  startedAtLabel: string | null;
+  language: string | null;
   thumbnailUrl: string;
-  categoryId: string;
-  categoryName: string;
+  categoryId: string | null;
+  categoryName: string | null;
   url: string;
+  isLive: boolean;
 };
 
 export function FollowedLive() {
-  const [streams, setStreams] = useState<StreamItem[]>([]);
+  const [channels, setChannels] = useState<FollowedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<ChannelSortKey>(DEFAULT_CHANNEL_SORT);
+  const [pollTick, setPollTick] = useState(0);
 
   useEffect(() => {
-    let active = true;
+    const interval = setInterval(() => setPollTick((c) => c + 1), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
-    fetch("/api/followed/live", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Failed to load followed live.");
-        }
+  useEffect(() => {
+    const controller = new AbortController();
 
-        if (active) {
-          setStreams(payload.data ?? []);
-        }
+    fetchSharedJson<{ data?: FollowedItem[] }>("/api/followed/all", { signal: controller.signal })
+      .then((payload) => {
+        setChannels(payload.data ?? []);
       })
       .catch((fetchError) => {
-        if (active) {
-          setError(fetchError instanceof Error ? fetchError.message : "Failed to load followed live.");
+        if ((fetchError as Error).name !== "AbortError") {
+          setError(fetchError instanceof Error ? fetchError.message : "Failed to load followed channels.");
         }
       })
       .finally(() => {
-        if (active) {
+        if (!controller.signal.aborted) {
           setLoading(false);
         }
       });
 
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, []);
+  }, [pollTick]);
+
+  const liveChannels = useMemo(
+    () =>
+      sortChannels(
+        channels.filter((channel) => channel.isLive),
+        sortKey,
+        (channel) => channel.displayName,
+        (channel) => channel.viewerCount ?? 0
+      ),
+    [channels, sortKey]
+  );
+  const offlineChannels = useMemo(
+    () =>
+      sortChannels(
+        channels.filter((channel) => !channel.isLive),
+        sortKey,
+        (channel) => channel.displayName,
+        () => null
+      ),
+    [channels, sortKey]
+  );
+
+  const renderCard = (channel: FollowedItem) => (
+    <StreamCard
+      key={channel.id}
+      id={channel.id}
+      channelId={channel.channelId}
+      login={channel.login}
+      displayName={channel.displayName}
+      title={channel.isLive ? channel.title || "Live now" : "Offline"}
+      viewerCount={channel.isLive ? channel.viewerCount ?? null : null}
+      startedAt={channel.startedAt}
+      startedAtLabel={channel.isLive ? channel.startedAtLabel ?? "" : "Offline"}
+      language={channel.language}
+      thumbnailUrl={channel.thumbnailUrl}
+      categoryId={channel.categoryId}
+      categoryName={channel.categoryName}
+      url={channel.url}
+    />
+  );
 
   return (
     <section className="stack-lg">
       <div className="panel">
-        <p className="eyebrow">Signed-in feed</p>
-        <h1>Followed live streams</h1>
-        <p className="muted">
-          This uses your Twitch OAuth session and the <code>user:read:follows</code> scope.
-        </p>
+        <h1>Followed</h1>
       </div>
-      {loading ? <div className="pill">Loading followed live</div> : null}
+      {loading ? <div className="pill">Loading followed channels</div> : null}
       {error ? <div className="error-box">{error}</div> : null}
-      <div className="stream-grid">
-        {streams.map((stream) => (
-          <StreamCard key={stream.id} {...stream} />
-        ))}
-      </div>
-      {!loading && !error && streams.length === 0 ? (
-        <div className="panel muted">No followed channels are live right now.</div>
+      {channels.length > 0 ? (
+        <div className="list-toolbar">
+          <ChannelSortSelect value={sortKey} onChange={setSortKey} ariaLabel="Sort followed channels" />
+        </div>
+      ) : null}
+      {liveChannels.length > 0 ? (
+        <div className="stack-sm">
+          <div className="section-head">
+            <h2>Live</h2>
+            <span className="pill">{liveChannels.length}</span>
+          </div>
+          <div className="stream-grid">{liveChannels.map(renderCard)}</div>
+        </div>
+      ) : null}
+      {offlineChannels.length > 0 ? (
+        <div className="stack-sm">
+          <div className="section-head">
+            <h2>Offline</h2>
+            <span className="pill">{offlineChannels.length}</span>
+          </div>
+          <div className="stream-grid">{offlineChannels.map(renderCard)}</div>
+        </div>
+      ) : null}
+      {!loading && !error && channels.length === 0 ? (
+        <div className="panel muted">You are not following any channels, or none could be loaded.</div>
       ) : null}
     </section>
   );
 }
-

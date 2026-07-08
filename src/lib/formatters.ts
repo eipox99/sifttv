@@ -45,6 +45,10 @@ export function buildTwitchThumbnail(url: string, width = 320, height = 180) {
   return url.replace("{width}", String(width)).replace("{height}", String(height));
 }
 
+export function buildLivePreviewUrl(login: string, width = 320, height = 180) {
+  return `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login.toLowerCase()}-${width}x${height}.jpg`;
+}
+
 export function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }

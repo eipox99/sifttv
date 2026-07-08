@@ -1,5 +1,6 @@
 import { env, hasRedisUrl, inlineRefreshJobsEnabled } from "@/lib/env";
 import { buildTwitchThumbnail } from "@/lib/formatters";
+import { prefetchFollowerModes } from "@/lib/follower-mode";
 import { filtersHash as hashFilters } from "@/lib/hash";
 import { getRefreshQueue } from "@/lib/jobs";
 import {
@@ -62,7 +63,9 @@ export async function createOrReuseRefreshJob(filter: CategoryFilter) {
   if (hasRedisUrl()) {
     await getRefreshQueue().add("refresh", { jobId: job.id }, { jobId: job.id, removeOnComplete: 25 });
   } else if (inlineRefreshJobsEnabled()) {
-    void processRefreshJob(job.id);
+    processRefreshJob(job.id).catch((error) => {
+      console.error(`Inline refresh job ${job.id} failed:`, error);
+    });
   }
 
   return job;
@@ -158,6 +161,10 @@ export async function processRefreshJob(jobId: string) {
       duplicateCount,
       completedAt: new Date().toISOString(),
       snapshotId: snapshot.id
+    });
+
+    prefetchFollowerModes(streams.map((stream) => stream.user_id)).catch((error) => {
+      console.error(`Failed to prefetch follower modes for job ${jobId}:`, error);
     });
   } catch (error) {
     updateRefreshJob(jobId, {

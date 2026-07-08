@@ -84,6 +84,7 @@ export function serializeFavorite(favorite: FavoriteRecord) {
     thumbnailUrl: favorite.thumbnailUrl,
     categoryId: favorite.categoryId,
     categoryName: favorite.categoryName,
+    startedAt: null as string | null,
     createdAt: new Date(favorite.createdAt).toISOString(),
     url: `https://www.twitch.tv/${favorite.broadcasterLogin}`
   };

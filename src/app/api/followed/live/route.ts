@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 
-import { auth } from "@/lib/auth";
-import { env, hasAuthRuntimeConfig } from "@/lib/env";
+import { hasAuthRuntimeConfig } from "@/lib/env";
 import { jsonError } from "@/lib/http";
 import { serializeTwitchStream } from "@/lib/serializers";
+import { resolveTwitchUserToken } from "@/lib/twitch-auth";
 import { getFollowedLiveStreams } from "@/lib/twitch";
 
 export async function GET(request: NextRequest) {
@@ -12,23 +11,15 @@ export async function GET(request: NextRequest) {
     return jsonError("Followed live requires Twitch sign-in to be configured.", 503);
   }
 
-  const session = await auth();
-  if (!session?.user?.id) {
-    return jsonError("You need to sign in with Twitch to load followed live streams.", 401);
-  }
-
   try {
     const cursor = request.nextUrl.searchParams.get("cursor") ?? undefined;
-    const token = await getToken({
-      req: request,
-      secret: env.AUTH_SECRET
-    });
+    const resolved = await resolveTwitchUserToken(request);
 
-    if (!token?.twitchAccessToken || !token?.twitchUserId) {
+    if (!resolved) {
       return jsonError("You need to sign in with Twitch again.", 401);
     }
 
-    const response = await getFollowedLiveStreams(token.twitchUserId, token.twitchAccessToken, cursor);
+    const response = await getFollowedLiveStreams(resolved.userId, resolved.accessToken, cursor);
 
     return NextResponse.json({
       data: response.data.map(serializeTwitchStream),

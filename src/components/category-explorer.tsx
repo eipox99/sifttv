@@ -6,6 +6,8 @@ import { StreamCard } from "@/components/stream-card";
 import { formatDateTime, formatLanguageLabel, normalizeLanguageCode } from "@/lib/formatters";
 import { CATEGORY_STREAM_BATCH_SIZE } from "@/lib/pagination";
 
+const REFRESH_INTERVAL_MS = 300_000;
+
 type StreamItem = {
   id: string;
   channelId: string;
@@ -13,6 +15,7 @@ type StreamItem = {
   displayName: string;
   title: string;
   viewerCount: number;
+  startedAt: string | null;
   startedAtLabel: string;
   language: string;
   thumbnailUrl: string;
@@ -47,6 +50,10 @@ type CategoryExplorerProps = {
   categoryName: string;
   initialPopular: StreamItem[];
   initialCursor: string | null;
+  initialSort: "popular" | "low_to_high_exact";
+  initialLanguage: string;
+  initialAvailableLanguages: string[];
+  initialExcludeFollowerOnly: boolean;
   exactReady: boolean;
 };
 
@@ -69,13 +76,19 @@ export function CategoryExplorer({
   categoryName,
   initialPopular,
   initialCursor,
+  initialSort,
+  initialLanguage,
+  initialAvailableLanguages,
+  initialExcludeFollowerOnly,
   exactReady
 }: CategoryExplorerProps) {
-  const [sort, setSort] = useState<"popular" | "low_to_high_exact">("popular");
-  const [language, setLanguage] = useState("");
-  const [discoveredLanguages, setDiscoveredLanguages] = useState<string[]>(() =>
-    collectLanguages(initialPopular).sort(compareLanguages)
-  );
+  const [sort, setSort] = useState<"popular" | "low_to_high_exact">(initialSort);
+  const [language, setLanguage] = useState(initialLanguage);
+  const [excludeFollowerOnly, setExcludeFollowerOnly] = useState(initialExcludeFollowerOnly);
+  const [discoveredLanguages, setDiscoveredLanguages] = useState<string[]>(() => {
+    const merged = new Set([...initialAvailableLanguages, ...collectLanguages(initialPopular)]);
+    return [...merged].sort(compareLanguages);
+  });
   const [popularStreams, setPopularStreams] = useState(initialPopular);
   const [popularCursor, setPopularCursor] = useState(initialCursor);
   const [snapshotStreams, setSnapshotStreams] = useState<StreamItem[]>([]);
@@ -88,9 +101,17 @@ export function CategoryExplorer({
   const [loadingMoreExact, setLoadingMoreExact] = useState(false);
   const [pendingRefresh, startRefreshTransition] = useTransition();
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const skipInitialPopularFetchRef = useRef(false);
+  const skipInitialPopularFetchRef = useRef(true);
   const popularLoadInFlightRef = useRef(false);
   const exactLoadInFlightRef = useRef(false);
+  const exactAbortRef = useRef<AbortController | null>(null);
+  const snapshotStreamsRef = useRef<StreamItem[]>(snapshotStreams);
+  snapshotStreamsRef.current = snapshotStreams;
+  const autoRefreshTimeRef = useRef(0);
+  const loadExactRef = useRef(loadExact);
+  loadExactRef.current = loadExact;
+  const loadExactDeltaRef = useRef(loadExactDelta);
+  loadExactDeltaRef.current = loadExactDelta;
   const activeStreams = useMemo(
     () => (sort === "popular" ? popularStreams : snapshotStreams),
     [popularStreams, snapshotStreams, sort]
@@ -123,6 +144,24 @@ export function CategoryExplorer({
     });
   }
 
+  async function persistPreferences(input: {
+    categorySort?: "popular" | "low_to_high_exact";
+    categoryLanguage?: string;
+    excludeFollowerOnly?: boolean;
+  }) {
+    await fetch("/api/preferences", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        categorySort: input.categorySort,
+        categoryLanguage: input.categoryLanguage ?? null,
+        excludeFollowerOnly: input.excludeFollowerOnly
+      })
+    });
+  }
+
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
     if (!activeJob || !["QUEUED", "RUNNING"].includes(activeJob.status)) {
@@ -139,7 +178,7 @@ export function CategoryExplorer({
 
       setActiveJob(payload.job);
       if (payload.job.status === "COMPLETED") {
-        await loadExact({ snapshotId: payload.job.snapshotId ?? undefined });
+        await loadExactDeltaRef.current(payload.job.snapshotId!);
       }
 
       if (payload.job.status === "FAILED") {
@@ -158,29 +197,67 @@ export function CategoryExplorer({
     };
   }, [activeJob]);
 
+  // Auto-refresh snapshot when it goes stale
+  useEffect(() => {
+    if (sort !== "low_to_high_exact" || !snapshot || !exactReady) {
+      return;
+    }
+
+    if (activeJob && ["QUEUED", "RUNNING"].includes(activeJob.status)) {
+      return;
+    }
+
+    const now = Date.now();
+    const completedAt = new Date(snapshot.completedAt).getTime();
+    const staleThreshold = now - REFRESH_INTERVAL_MS;
+
+    if (completedAt < staleThreshold && autoRefreshTimeRef.current < staleThreshold) {
+      autoRefreshTimeRef.current = now;
+      setError(null);
+      fetch(`/api/categories/${categoryId}/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categoryName, language: language || null })
+      })
+        .then(async (response) => {
+          const payload = await response.json();
+          if (!response.ok) {
+            setError(payload.error ?? "Failed to start refresh.");
+            return;
+          }
+          setActiveJob(payload.job);
+        })
+        .catch((fetchError) => {
+          setError(fetchError instanceof Error ? fetchError.message : "Auto-refresh failed.");
+        });
+    }
+  }, [sort, snapshot, exactReady, activeJob, categoryId, categoryName, language]);
+
   useEffect(() => {
     if (sort !== "low_to_high_exact") {
       return;
     }
 
     void loadExact({ reset: true });
-  }, [sort, language]);
+  }, [sort, language, excludeFollowerOnly]);
 
   useEffect(() => {
-    let active = true;
-
     if (sort !== "popular") {
       return;
     }
 
-    if (!skipInitialPopularFetchRef.current && !language) {
-      skipInitialPopularFetchRef.current = true;
+    if (skipInitialPopularFetchRef.current) {
+      skipInitialPopularFetchRef.current = false;
       return;
     }
 
+    const controller = new AbortController();
+    const { signal } = controller;
+
     const params = new URLSearchParams({
       sort: "popular",
-      limit: String(CATEGORY_STREAM_BATCH_SIZE)
+      limit: String(CATEGORY_STREAM_BATCH_SIZE),
+      excludeFollowerOnly: excludeFollowerOnly ? "true" : "false"
     });
     if (language) {
       params.set("language", language);
@@ -190,7 +267,8 @@ export function CategoryExplorer({
     setLoadingMorePopular(false);
 
     fetch(`/api/categories/${categoryId}/streams?${params.toString()}`, {
-      cache: "no-store"
+      cache: "no-store",
+      signal
     })
       .then(async (response) => {
         const payload = await response.json();
@@ -198,7 +276,7 @@ export function CategoryExplorer({
           throw new Error(payload.error ?? "Failed to load category streams.");
         }
 
-        if (!active) {
+        if (signal.aborted) {
           return;
         }
 
@@ -208,15 +286,15 @@ export function CategoryExplorer({
         mergeDiscoveredLanguages(nextStreams);
       })
       .catch((fetchError) => {
-        if (active) {
+        if (!signal.aborted && (fetchError as Error).name !== "AbortError") {
           setError(fetchError instanceof Error ? fetchError.message : "Failed to load category streams.");
         }
       });
 
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, [categoryId, language, sort]);
+  }, [categoryId, excludeFollowerOnly, language, sort]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -247,7 +325,16 @@ export function CategoryExplorer({
     return () => {
       observer.disconnect();
     };
-  }, [hasMoreStreams, loadingExact, loadingMoreStreams, sort, popularCursor, nextExactOffset]);
+  }, [
+    hasMoreStreams,
+    loadingExact,
+    loadingMoreStreams,
+    sort,
+    popularCursor,
+    nextExactOffset,
+    language,
+    excludeFollowerOnly
+  ]);
 
   async function loadExact(options?: {
     snapshotId?: string;
@@ -270,12 +357,18 @@ export function CategoryExplorer({
       setNextExactOffset(null);
     }
 
+    exactAbortRef.current?.abort();
+    const controller = new AbortController();
+    exactAbortRef.current = controller;
+    const { signal } = controller;
+
     setError(null);
 
     try {
       const params = new URLSearchParams({
         sort: "low_to_high_exact",
-        limit: String(CATEGORY_STREAM_BATCH_SIZE)
+        limit: String(CATEGORY_STREAM_BATCH_SIZE),
+        excludeFollowerOnly: excludeFollowerOnly ? "true" : "false"
       });
       if (language) {
         params.set("language", language);
@@ -288,12 +381,17 @@ export function CategoryExplorer({
       }
 
       const response = await fetch(`/api/categories/${categoryId}/streams?${params.toString()}`, {
-        cache: "no-store"
+        cache: "no-store",
+        signal
       });
       const payload = await response.json();
 
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to load exact snapshot.");
+      }
+
+      if (signal.aborted) {
+        return;
       }
 
       const nextSnapshotStreams = payload.data ?? [];
@@ -303,14 +401,59 @@ export function CategoryExplorer({
       setNextExactOffset(payload.nextOffset ?? null);
       mergeDiscoveredLanguages(nextSnapshotStreams);
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : "Failed to load exact snapshot.");
+      if (!signal.aborted && (fetchError as Error).name !== "AbortError") {
+        setError(fetchError instanceof Error ? fetchError.message : "Failed to load exact snapshot.");
+      }
     } finally {
+      if (exactAbortRef.current === controller) {
+        exactAbortRef.current = null;
+      }
+
       if (append) {
         exactLoadInFlightRef.current = false;
         setLoadingMoreExact(false);
-      } else {
+      } else if (!signal.aborted) {
         setLoadingExact(false);
       }
+    }
+  }
+
+  async function loadExactDelta(snapshotId: string) {
+    setLoadingExact(true);
+    const knownIds = snapshotStreamsRef.current.map((s) => s.id);
+    const params = new URLSearchParams({ snapshotId });
+    if (knownIds.length > 0) {
+      params.set("knownIds", knownIds.join(","));
+    }
+
+    try {
+      const response = await fetch(
+        `/api/categories/${categoryId}/streams/delta?${params.toString()}`,
+        { cache: "no-store" }
+      );
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setError(payload.error ?? "Failed to load snapshot delta.");
+        return;
+      }
+
+      setSnapshotStreams((current) => {
+        const newIds = new Set(payload.newStreams.map((s: StreamItem) => s.id));
+        const keep = current.filter((s) => !payload.removedIds.includes(s.id) && !newIds.has(s.id));
+        const merged = [...keep, ...payload.newStreams];
+        merged.sort((a: StreamItem, b: StreamItem) => a.viewerCount - b.viewerCount);
+        return merged;
+      });
+
+      setSnapshot(payload.snapshot);
+      setActiveJob(payload.activeJob);
+    } catch (fetchError) {
+      if ((fetchError as Error).name !== "AbortError") {
+        setError(fetchError instanceof Error ? fetchError.message : "Delta fetch failed.");
+      }
+    } finally {
+      setLoadingExact(false);
     }
   }
 
@@ -325,7 +468,8 @@ export function CategoryExplorer({
     const params = new URLSearchParams({
       sort: "popular",
       cursor: popularCursor,
-      limit: String(CATEGORY_STREAM_BATCH_SIZE)
+      limit: String(CATEGORY_STREAM_BATCH_SIZE),
+      excludeFollowerOnly: excludeFollowerOnly ? "true" : "false"
     });
     if (language) {
       params.set("language", language);
@@ -378,21 +522,37 @@ export function CategoryExplorer({
           <div className="segmented">
             <button
               className={sort === "popular" ? "segment active" : "segment"}
-              onClick={() => setSort("popular")}
+              onClick={() => {
+                setSort("popular");
+                void persistPreferences({
+                  categorySort: "popular"
+                });
+              }}
             >
               Popular
             </button>
             <button
               className={sort === "low_to_high_exact" ? "segment active" : "segment"}
               disabled={!exactReady}
-              onClick={() => setSort("low_to_high_exact")}
+              onClick={() => {
+                setSort("low_to_high_exact");
+                void persistPreferences({
+                  categorySort: "low_to_high_exact"
+                });
+              }}
             >
               Exact low to high
             </button>
           </div>
           <select
             value={language}
-            onChange={(event) => setLanguage(normalizeLanguageCode(event.target.value) ?? "")}
+            onChange={(event) => {
+              const nextLanguage = normalizeLanguageCode(event.target.value) ?? "";
+              setLanguage(nextLanguage);
+              void persistPreferences({
+                categoryLanguage: nextLanguage
+              });
+            }}
             className="text-input compact-input select-input"
             aria-label="Filter streams by language"
           >
@@ -403,6 +563,19 @@ export function CategoryExplorer({
               </option>
             ))}
           </select>
+          <button
+            className={excludeFollowerOnly ? "segment active" : "segment"}
+            onClick={() => {
+              const nextExcludeFollowerOnly = !excludeFollowerOnly;
+              setExcludeFollowerOnly(nextExcludeFollowerOnly);
+              void persistPreferences({
+                excludeFollowerOnly: nextExcludeFollowerOnly
+              });
+            }}
+            type="button"
+          >
+            Exclude follower-only chat
+          </button>
           <button
             className="button button-primary"
             disabled={pendingRefresh || !exactReady}
@@ -429,13 +602,12 @@ export function CategoryExplorer({
                   return;
                 }
 
-                setSort("low_to_high_exact");
                 setActiveJob(payload.job);
                 await loadExact({ reset: true });
               })
             }
           >
-            {pendingRefresh ? "Starting refresh" : "Refresh exact snapshot"}
+            {pendingRefresh ? "Starting refresh" : "Refresh"}
           </button>
         </div>
       </div>
@@ -449,7 +621,9 @@ export function CategoryExplorer({
             <strong>{snapshot ? `${snapshot.streamCount} streams` : "No snapshot yet"}</strong>
             <div className="muted">
               {snapshot
-                ? `Completed ${formatDateTime(snapshot.completedAt)} with ${snapshot.duplicateCount} duplicates removed`
+                ? activeJob && ["QUEUED", "RUNNING"].includes(activeJob.status)
+                  ? `Refreshing…`
+                  : `Completed ${formatDateTime(snapshot.completedAt)} with ${snapshot.duplicateCount} duplicates removed`
                 : "Run a refresh to build the first ascending snapshot."}
             </div>
           </div>

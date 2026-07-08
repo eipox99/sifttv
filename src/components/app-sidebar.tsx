@@ -2,28 +2,41 @@
 
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { FAVORITES_UPDATED_EVENT } from "@/lib/favorites-events";
-import { formatLanguageLabel, formatViewerCount } from "@/lib/formatters";
+import { fetchSharedJson } from "@/lib/client-fetch";
+import { formatViewerCount } from "@/lib/formatters";
+import { ChannelSortSelect } from "@/components/channel-sort-select";
+import { DEFAULT_CHANNEL_SORT, sortChannels, type ChannelSortKey } from "@/lib/channel-sort";
+import { usePlayer } from "@/components/stream-player";
+import { usePreferences } from "@/components/preferences-store";
 
 type SidebarFollowedStream = {
   id: string;
+  channelId: string;
+  login: string;
   displayName: string;
   title: string;
   viewerCount: number;
   language: string;
   thumbnailUrl: string;
   categoryName: string;
+  categoryId: string;
   url: string;
 };
 
 type SidebarFavorite = {
   id: string;
+  channelId: string;
   broadcasterLogin: string;
   broadcasterName: string;
   thumbnailUrl?: string | null;
   categoryName?: string | null;
+  categoryId?: string | null;
+  isLive?: boolean;
+  viewerCount?: number | null;
+  title?: string | null;
   url: string;
 };
 
@@ -31,9 +44,45 @@ type AppSidebarProps = {
   authReady: boolean;
 };
 
-const MAX_ITEMS = 6;
+const AVATAR_COLORS = [
+  "#9146ff", "#e91916", "#fac834", "#00c7b1", "#ff75e6",
+  "#1e69cc", "#eb0400", "#0d9c90", "#ff4d4d", "#3db5ff"
+];
+
+function avatarColor(login: string) {
+  let hash = 0;
+  for (let i = 0; i < login.length; i++) {
+    hash = login.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function AvatarImage({ login, displayName }: { login: string; displayName: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <span className="sidebar-item-avatar" style={{ background: avatarColor(login) }}>
+        {displayName.charAt(0).toUpperCase()}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      className="sidebar-item-avatar"
+      src={`/api/avatar/${login}`}
+      alt=""
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 export function AppSidebar({ authReady }: AppSidebarProps) {
+  const { open } = usePlayer();
+  const { openInNewTab } = usePreferences();
   const { data: session, status } = useSession();
   const [followed, setFollowed] = useState<SidebarFollowedStream[]>([]);
   const [favorites, setFavorites] = useState<SidebarFavorite[]>([]);
@@ -42,9 +91,40 @@ export function AppSidebar({ authReady }: AppSidebarProps) {
   const [followedError, setFollowedError] = useState<string | null>(null);
   const [favoritesError, setFavoritesError] = useState<string | null>(null);
   const [favoritesRefreshKey, setFavoritesRefreshKey] = useState(0);
+  const [sortKey, setSortKey] = useState<ChannelSortKey>(DEFAULT_CHANNEL_SORT);
+  const [pollTick, setPollTick] = useState(0);
+  const hasFollowedRef = useRef(false);
+  const hasFavoritesRef = useRef(false);
 
-  const visibleFollowed = useMemo(() => followed.slice(0, MAX_ITEMS), [followed]);
-  const visibleFavorites = useMemo(() => favorites.slice(0, MAX_ITEMS), [favorites]);
+  useEffect(() => {
+    const interval = setInterval(() => setPollTick((c) => c + 1), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const visibleFollowed = useMemo(
+    () =>
+      sortChannels(
+        followed,
+        sortKey,
+        (stream) => stream.displayName,
+        (stream) => stream.viewerCount
+      ),
+    [followed, sortKey]
+  );
+  const visibleFavorites = useMemo(
+    () =>
+      sortChannels(
+        favorites.filter((favorite) => favorite.isLive),
+        sortKey,
+        (favorite) => favorite.broadcasterName,
+        (favorite) => favorite.viewerCount ?? 0
+      ),
+    [favorites, sortKey]
+  );
+  const liveFavoritesCount = useMemo(
+    () => favorites.filter((favorite) => favorite.isLive).length,
+    [favorites]
+  );
 
   useEffect(() => {
     const handleFavoritesUpdated = () => {
@@ -72,37 +152,33 @@ export function AppSidebar({ authReady }: AppSidebarProps) {
       return;
     }
 
-    let active = true;
-    setLoadingFollowed(true);
+    const controller = new AbortController();
+    if (!hasFollowedRef.current) {
+      setLoadingFollowed(true);
+    }
     setFollowedError(null);
 
-    fetch("/api/followed/live", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Failed to load followed live.");
-        }
-
-        if (active) {
-          setFollowed(payload.data ?? []);
-        }
+    fetchSharedJson<{ data?: SidebarFollowedStream[] }>("/api/followed/live", { signal: controller.signal })
+      .then((payload) => {
+        setFollowed(payload.data ?? []);
+        hasFollowedRef.current = true;
       })
       .catch((error) => {
-        if (active) {
+        if ((error as Error).name !== "AbortError") {
           setFollowed([]);
           setFollowedError(error instanceof Error ? error.message : "Failed to load followed live.");
         }
       })
       .finally(() => {
-        if (active) {
+        if (!controller.signal.aborted) {
           setLoadingFollowed(false);
         }
       });
 
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, [authReady, session?.user?.id, status]);
+  }, [authReady, session?.user?.id, status, pollTick]);
 
   useEffect(() => {
     if (!authReady || status === "loading") {
@@ -116,45 +192,44 @@ export function AppSidebar({ authReady }: AppSidebarProps) {
       return;
     }
 
-    let active = true;
-    setLoadingFavorites(true);
+    const controller = new AbortController();
+    if (!hasFavoritesRef.current) {
+      setLoadingFavorites(true);
+    }
     setFavoritesError(null);
 
-    fetch("/api/favorites", { cache: "no-store" })
+    fetch("/api/favorites", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.error ?? "Failed to load favorites.");
         }
 
-        if (active) {
-          setFavorites(payload.data ?? []);
-        }
+        setFavorites(payload.data ?? []);
+        hasFavoritesRef.current = true;
       })
       .catch((error) => {
-        if (active) {
+        if ((error as Error).name !== "AbortError") {
           setFavorites([]);
           setFavoritesError(error instanceof Error ? error.message : "Failed to load favorites.");
         }
       })
       .finally(() => {
-        if (active) {
+        if (!controller.signal.aborted) {
           setLoadingFavorites(false);
         }
       });
 
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, [authReady, favoritesRefreshKey, session?.user?.id, status]);
+  }, [authReady, favoritesRefreshKey, session?.user?.id, status, pollTick]);
 
   return (
     <aside className="app-sidebar">
       <div className="panel sidebar-panel stack-md">
         <div>
-          <p className="eyebrow">Quick Access</p>
           <h2>Followed and favorites</h2>
-          <p className="muted">Keep your signed-in stream shortcuts visible while browsing categories.</p>
         </div>
 
         {!authReady ? (
@@ -176,9 +251,12 @@ export function AppSidebar({ authReady }: AppSidebarProps) {
 
         {session?.user ? (
           <>
+            <div className="sidebar-sort">
+              <ChannelSortSelect value={sortKey} onChange={setSortKey} ariaLabel="Sort followed and favorites" />
+            </div>
             <section className="sidebar-section stack-sm">
               <div className="section-head">
-                <h3>Followed Live</h3>
+                <h3>Followed</h3>
                 <Link href="/followed" className="pill">
                   {followed.length}
                 </Link>
@@ -190,26 +268,39 @@ export function AppSidebar({ authReady }: AppSidebarProps) {
               ) : null}
               <div className="sidebar-list">
                 {visibleFollowed.map((stream) => (
-                  <a
+                  <button
                     key={stream.id}
-                    href={stream.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="sidebar-item-card"
+                    type="button"
+                    onClick={() => {
+                      if (openInNewTab) {
+                        window.open(`/watch/${stream.login}`, "_blank");
+                      } else {
+                        open({
+                          login: stream.login,
+                          displayName: stream.displayName,
+                          channelId: stream.channelId,
+                          title: stream.title,
+                          categoryName: stream.categoryName,
+                          categoryId: stream.categoryId,
+                          thumbnailUrl: stream.thumbnailUrl,
+                          url: stream.url
+                        });
+                      }
+                    }}
+                    className="sidebar-item"
+                    title={stream.title}
                   >
-                    <img src={stream.thumbnailUrl} alt={stream.title} className="sidebar-item-thumb" />
-                    <div className="sidebar-item-copy">
-                      <strong className="sidebar-item-title">{stream.title}</strong>
-                      <div className="sidebar-item-subtitle">{stream.displayName}</div>
-                      <div className="sidebar-item-meta">
-                        <span>{stream.categoryName || "Live"}</span>
-                        <span>{formatViewerCount(stream.viewerCount)} viewers</span>
+                    <AvatarImage login={stream.login} displayName={stream.displayName} />
+                    <div className="sidebar-item-body">
+                      <div className="sidebar-item-row">
+                        <strong className="sidebar-item-name">{stream.displayName}</strong>
+                        <span className="sidebar-item-viewers">
+                          {formatViewerCount(stream.viewerCount)}
+                        </span>
                       </div>
-                      <div className="sidebar-item-meta">
-                        <span>{formatLanguageLabel(stream.language)}</span>
-                      </div>
+                      <div className="sidebar-item-category">{stream.categoryName || "Live"}</div>
                     </div>
-                  </a>
+                  </button>
                 ))}
               </div>
             </section>
@@ -218,40 +309,54 @@ export function AppSidebar({ authReady }: AppSidebarProps) {
               <div className="section-head">
                 <h3>Favorites</h3>
                 <Link href="/favorites" className="pill">
-                  {favorites.length}
+                  {liveFavoritesCount}
                 </Link>
               </div>
               {loadingFavorites ? <div className="pill">Loading favorites</div> : null}
               {favoritesError ? <div className="sidebar-note">{favoritesError}</div> : null}
               {!loadingFavorites && !favoritesError && visibleFavorites.length === 0 ? (
-                <div className="sidebar-note">Save channels from stream cards and they will stay pinned here.</div>
+                <div className="sidebar-note">
+                  {favorites.length === 0
+                    ? "Save channels from stream cards and they will stay pinned here."
+                    : "None of your favorites are live right now."}
+                </div>
               ) : null}
               <div className="sidebar-list">
                 {visibleFavorites.map((favorite) => (
-                  <a
+                  <button
                     key={favorite.id}
-                    href={favorite.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="sidebar-item-card sidebar-favorite-item"
+                    type="button"
+                    onClick={() => {
+                      if (openInNewTab) {
+                        window.open(`/watch/${favorite.broadcasterLogin}`, "_blank");
+                      } else {
+                        open({
+                          login: favorite.broadcasterLogin,
+                          displayName: favorite.broadcasterName,
+                          channelId: favorite.channelId,
+                          categoryName: favorite.categoryName,
+                          categoryId: favorite.categoryId,
+                          thumbnailUrl: favorite.thumbnailUrl,
+                          url: favorite.url
+                        });
+                      }
+                    }}
+                    className="sidebar-item"
+                    title={favorite.title ?? favorite.broadcasterName}
                   >
-                    {favorite.thumbnailUrl ? (
-                      <img
-                        src={favorite.thumbnailUrl}
-                        alt={favorite.broadcasterName}
-                        className="sidebar-item-thumb"
-                      />
-                    ) : (
-                      <div className="sidebar-item-thumb sidebar-item-thumb-fallback">{favorite.broadcasterName}</div>
-                    )}
-                    <div className="sidebar-item-copy">
-                      <strong className="sidebar-item-title">{favorite.broadcasterName}</strong>
-                      <div className="sidebar-item-subtitle">@{favorite.broadcasterLogin}</div>
-                      <div className="sidebar-item-meta">
-                        <span>{favorite.categoryName ?? "Saved channel"}</span>
+                    <AvatarImage login={favorite.broadcasterLogin} displayName={favorite.broadcasterName} />
+                    <div className="sidebar-item-body">
+                      <div className="sidebar-item-row">
+                        <strong className="sidebar-item-name">{favorite.broadcasterName}</strong>
+                        <span className="sidebar-item-viewers">
+                          {favorite.isLive ? formatViewerCount(favorite.viewerCount ?? 0) : "Offline"}
+                        </span>
+                      </div>
+                      <div className="sidebar-item-category">
+                        {favorite.categoryName ?? "Saved channel"}
                       </div>
                     </div>
-                  </a>
+                  </button>
                 ))}
               </div>
             </section>

@@ -1,9 +1,9 @@
 {
-  "name": "twitch-low-high",
+  "name": "sifttv",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -13,7 +13,9 @@
     "@auth/prisma-adapter": "^2.8.0",
     "@prisma/client": "^5.22.0",
     "bullmq": "^5.40.3",
+    "hls.js": "^1.6.16",
     "ioredis": "^5.4.1",
+    "mpegts.js": "^1.8.0",
     "next": "^15.1.0",
     "next-auth": "^5.0.0-beta.25",
     "react": "^19.0.0",

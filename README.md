@@ -1,4 +1,4 @@
-# Twitch Low High
+# SiftTV
 
 Standalone Twitch live discovery app focused on exact low-to-high browsing for categories like Just Chatting.
 

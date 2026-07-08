@@ -20,6 +20,7 @@ type ChannelResult = {
   categoryName: string;
   thumbnailUrl: string;
   isLive: boolean;
+  startedAt: string | null;
   startedAtLabel: string | null;
   url: string;
 };
@@ -33,8 +34,6 @@ export function SearchExplorer() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let active = true;
-
     if (deferredQuery.length < 2) {
       setCategories([]);
       setChannels([]);
@@ -42,47 +41,55 @@ export function SearchExplorer() {
       return;
     }
 
+    const controller = new AbortController();
+    const { signal } = controller;
+
     setLoading(true);
     setError(null);
 
     Promise.all([
-      fetch(`/api/search/categories?q=${encodeURIComponent(deferredQuery)}`, { cache: "no-store" }),
-      fetch(`/api/search/channels?q=${encodeURIComponent(deferredQuery)}`, { cache: "no-store" })
+      fetch(`/api/search/categories?q=${encodeURIComponent(deferredQuery)}`, { cache: "no-store", signal }),
+      fetch(`/api/search/channels?q=${encodeURIComponent(deferredQuery)}`, { cache: "no-store", signal })
     ])
       .then(async ([categoriesResponse, channelsResponse]) => {
         const [categoriesPayload, channelsPayload] = await Promise.all([
-          categoriesResponse.json(),
-          channelsResponse.json()
+          categoriesResponse.json().catch(() => ({})),
+          channelsResponse.json().catch(() => ({}))
         ]);
 
-        if (!active) {
+        if (signal.aborted) {
           return;
         }
 
-        if (!categoriesResponse.ok) {
-          throw new Error(categoriesPayload.error ?? "Category search failed.");
+        if (categoriesResponse.ok) {
+          setCategories(categoriesPayload.data ?? []);
         }
 
-        if (!channelsResponse.ok) {
-          throw new Error(channelsPayload.error ?? "Channel search failed.");
+        if (channelsResponse.ok) {
+          setChannels(channelsPayload.data ?? []);
         }
 
-        setCategories(categoriesPayload.data ?? []);
-        setChannels(channelsPayload.data ?? []);
+        if (!categoriesResponse.ok && !channelsResponse.ok) {
+          setError(
+            categoriesPayload.error ?? channelsPayload.error ?? "Search failed."
+          );
+        } else {
+          setError(null);
+        }
       })
       .catch((fetchError) => {
-        if (active) {
+        if (!signal.aborted) {
           setError(fetchError instanceof Error ? fetchError.message : "Search failed.");
         }
       })
       .finally(() => {
-        if (active) {
+        if (!signal.aborted) {
           setLoading(false);
         }
       });
 
     return () => {
-      active = false;
+      controller.abort();
     };
   }, [deferredQuery]);
 
@@ -106,7 +113,7 @@ export function SearchExplorer() {
       {error ? <div className="error-box">{error}</div> : null}
 
       <div className="two-column">
-        <section className="panel">
+        <section>
           <div className="section-head">
             <h2>Categories</h2>
             <span className="pill">{categories.length}</span>
@@ -127,7 +134,7 @@ export function SearchExplorer() {
           </div>
         </section>
 
-        <section className="panel">
+        <section>
           <div className="section-head">
             <h2>Live channels</h2>
             <span className="pill">{channels.length}</span>
@@ -142,6 +149,7 @@ export function SearchExplorer() {
                 displayName={channel.displayName}
                 title={channel.title}
                 viewerCount={null}
+                startedAt={channel.startedAt}
                 startedAtLabel={channel.startedAtLabel ?? "Live"}
                 language={null}
                 thumbnailUrl={channel.thumbnailUrl}

@@ -1,8 +1,9 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useState, useTransition } from "react";
+import { memo, useState, useTransition } from "react";
 
+import { useFavorites } from "@/components/favorites-store";
 import { emitFavoritesUpdated } from "@/lib/favorites-events";
 
 type FavoriteButtonProps = {
@@ -15,19 +16,25 @@ type FavoriteButtonProps = {
   compact?: boolean;
 };
 
-export function FavoriteButton(props: FavoriteButtonProps) {
+function FavoriteButtonComponent(props: FavoriteButtonProps) {
   const { data: session } = useSession();
-  const [isFavorite, setIsFavorite] = useState(false);
+  const favorites = useFavorites();
   const [pending, startTransition] = useTransition();
+  const [fallbackFavorite, setFallbackFavorite] = useState(false);
 
   if (!session?.user) {
     return null;
   }
 
+  const isFavorite = favorites ? favorites.isFavorite(props.channelId) : fallbackFavorite;
+
+  const baseClass = props.compact ? "button button-secondary button-compact" : "button button-secondary";
+
   return (
     <button
-      className={props.compact ? "button button-secondary button-compact" : "button button-secondary"}
+      className={`${baseClass} favorite-button${isFavorite ? " is-favorite" : ""}`}
       disabled={pending}
+      aria-pressed={isFavorite}
       onClick={() =>
         startTransition(async () => {
           if (isFavorite) {
@@ -36,7 +43,8 @@ export function FavoriteButton(props: FavoriteButtonProps) {
             });
 
             if (response.ok) {
-              setIsFavorite(false);
+              favorites?.setLocalFavorite(props.channelId, false);
+              setFallbackFavorite(false);
               emitFavoritesUpdated();
             }
 
@@ -52,17 +60,21 @@ export function FavoriteButton(props: FavoriteButtonProps) {
           });
 
           if (response.ok) {
-            setIsFavorite(true);
+            favorites?.setLocalFavorite(props.channelId, true);
+            setFallbackFavorite(true);
             emitFavoritesUpdated();
           }
         })
       }
     >
+      <span className="favorite-star" aria-hidden="true">
+        {isFavorite ? "★" : "☆"}
+      </span>
       {pending
         ? "Saving"
         : props.compact
           ? isFavorite
-            ? "Saved"
+            ? "Favorited"
             : "Favorite"
           : isFavorite
             ? "Remove favorite"
@@ -70,3 +82,5 @@ export function FavoriteButton(props: FavoriteButtonProps) {
     </button>
   );
 }
+
+export const FavoriteButton = memo(FavoriteButtonComponent);

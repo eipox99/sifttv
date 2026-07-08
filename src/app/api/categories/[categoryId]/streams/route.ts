@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { loadExactCategoryStreams, loadPopularCategoryStreams } from "@/lib/category-streams";
 import { jsonError } from "@/lib/http";
 import { findActiveRefreshJob } from "@/lib/local-store";
-import { getCategoryFiltersHash, getLatestSnapshot, getSnapshotById } from "@/lib/refresh";
-import { serializeSnapshotStream, serializeTwitchStream } from "@/lib/serializers";
-import { getStreamsByCategory } from "@/lib/twitch";
+import { getCategoryFiltersHash } from "@/lib/refresh";
 
 function parsePositiveInteger(value: string | null, fallback: number, max?: number) {
   const parsed = Number.parseInt(value ?? "", 10);
@@ -28,6 +27,10 @@ function parseNonNegativeInteger(value: string | null, fallback = 0) {
   return parsed;
 }
 
+function parseBoolean(value: string | null) {
+  return value === "true";
+}
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ categoryId: string }> }
@@ -37,22 +40,24 @@ export async function GET(
   const language = request.nextUrl.searchParams.get("language") ?? undefined;
   const cursor = request.nextUrl.searchParams.get("cursor") ?? undefined;
   const snapshotId = request.nextUrl.searchParams.get("snapshotId") ?? undefined;
+  const excludeFollowerOnly = parseBoolean(request.nextUrl.searchParams.get("excludeFollowerOnly"));
   const limit = parsePositiveInteger(request.nextUrl.searchParams.get("limit"), 36, 100);
   const offset = parseNonNegativeInteger(request.nextUrl.searchParams.get("offset"));
 
   try {
     if (sort === "popular") {
-      const response = await getStreamsByCategory({
+      const response = await loadPopularCategoryStreams({
         categoryId,
         language,
         cursor,
-        limit
+        limit,
+        excludeFollowerOnly
       });
 
       return NextResponse.json({
         sort,
-        data: response.data.map(serializeTwitchStream),
-        cursor: response.pagination?.cursor ?? null
+        data: response.data,
+        cursor: response.cursor
       });
     }
 
@@ -60,32 +65,36 @@ export async function GET(
       return jsonError("Unsupported sort mode.", 400);
     }
 
-    const snapshot = snapshotId
-      ? await getSnapshotById(snapshotId, { offset, limit })
-      : await getLatestSnapshot({ categoryId, language }, { offset, limit });
+    const snapshotResult = await loadExactCategoryStreams({
+      categoryId,
+      language,
+      snapshotId,
+      offset,
+      limit,
+      excludeFollowerOnly
+    });
 
     const activeJob = findActiveRefreshJob(
       getCategoryFiltersHash({
         categoryId,
-        categoryName: snapshot?.categoryName ?? "",
+        categoryName: snapshotResult.snapshot?.categoryName ?? "",
         language
       })
     );
 
     return NextResponse.json({
       sort,
-      data: snapshot?.streams.map(serializeSnapshotStream) ?? [],
-      nextOffset:
-        snapshot && offset + snapshot.streams.length < snapshot.streamCount ? offset + snapshot.streams.length : null,
-      snapshot: snapshot
+      data: snapshotResult.data,
+      nextOffset: snapshotResult.nextOffset,
+      snapshot: snapshotResult.snapshot
         ? {
-            id: snapshot.id,
-            categoryId: snapshot.categoryId,
-            categoryName: snapshot.categoryName,
-            language: snapshot.language,
-            completedAt: snapshot.completedAt,
-            streamCount: snapshot.streamCount,
-            duplicateCount: snapshot.duplicateCount
+            id: snapshotResult.snapshot.id,
+            categoryId: snapshotResult.snapshot.categoryId,
+            categoryName: snapshotResult.snapshot.categoryName,
+            language: snapshotResult.snapshot.language,
+            completedAt: snapshotResult.snapshot.completedAt,
+            streamCount: snapshotResult.snapshot.streamCount,
+            duplicateCount: snapshotResult.snapshot.duplicateCount
           }
         : null,
       activeJob: activeJob

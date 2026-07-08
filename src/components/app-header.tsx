@@ -2,30 +2,34 @@ import Link from "next/link";
 
 import { SessionControls } from "@/components/session-controls";
 import { ThemeToggle } from "@/components/theme-toggle";
+import type { ThemeMode } from "@/lib/preferences";
 
 type AppHeaderProps = {
   authReady: boolean;
+  initialThemeMode: ThemeMode;
 };
 
-export function AppHeader({ authReady }: AppHeaderProps) {
+export function AppHeader({ authReady, initialThemeMode }: AppHeaderProps) {
   return (
     <header className="app-header">
       <div className="brand">
         <Link href="/" className="brand-link">
-          Twitch Low High
+          <img src="/logo.png" alt="" className="brand-logo" aria-hidden="true" />
+          <span>SiftTV</span>
         </Link>
         <p className="brand-copy">
-          Browse live Twitch with exact low-to-high snapshots when Twitch itself will not.
+          Sift through Twitch and surface the small streams the front page buries.
         </p>
       </div>
       <nav className="nav-links">
         <Link href="/">Home</Link>
         <Link href="/search">Search</Link>
-        <Link href="/followed">Followed Live</Link>
+        <Link href="/followed">Followed</Link>
         <Link href="/favorites">Favorites</Link>
+        <Link href="/settings">Settings</Link>
       </nav>
       <div className="header-actions">
-        <ThemeToggle />
+        <ThemeToggle initialThemeMode={initialThemeMode} />
         <SessionControls authReady={authReady} />
       </div>
     </header>

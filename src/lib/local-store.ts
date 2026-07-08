@@ -78,6 +78,31 @@ export type RefreshJobRecord = {
   updatedAt: string;
 };
 
+export type AppPreferencesRecord = {
+  ownerId: string;
+  themeMode: string;
+  categorySort: string;
+  categoryLanguage: string | null;
+  excludeFollowerOnly: number;
+  playbackEngine: string;
+  lowLatencyAutoFallback: number;
+  lowLatencyCatchUp: number;
+  autoOpenChat: number;
+  chatAutoLogin: number;
+  hoverPreview: number;
+  mpegtsLowLatency: number;
+  openInNewTab: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BroadcasterChatSettingsRecord = {
+  broadcasterId: string;
+  followerMode: number;
+  followerModeDuration: number | null;
+  checkedAt: string;
+};
+
 declare global {
   // eslint-disable-next-line no-var
   var __localDb: DatabaseSync | undefined;
@@ -179,7 +204,48 @@ function initializeDatabase(db: DatabaseSync) {
 
     CREATE INDEX IF NOT EXISTS refresh_jobs_status_created_idx
       ON refresh_jobs(status, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS app_preferences (
+      owner_id TEXT PRIMARY KEY,
+      theme_mode TEXT NOT NULL DEFAULT 'dark',
+      category_sort TEXT NOT NULL DEFAULT 'popular',
+      category_language TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS broadcaster_chat_settings (
+      broadcaster_id TEXT PRIMARY KEY,
+      follower_mode INTEGER NOT NULL DEFAULT 0,
+      follower_mode_duration INTEGER,
+      checked_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS broadcaster_chat_settings_checked_idx
+      ON broadcaster_chat_settings(checked_at DESC);
   `);
+
+  ensureColumnExists(db, "app_preferences", "exclude_follower_only", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumnExists(db, "app_preferences", "playback_engine", "TEXT NOT NULL DEFAULT 'lowlatency'");
+  ensureColumnExists(db, "app_preferences", "low_latency_auto_fallback", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumnExists(db, "app_preferences", "low_latency_catch_up", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumnExists(db, "app_preferences", "auto_open_chat", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumnExists(db, "app_preferences", "chat_auto_login", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumnExists(db, "app_preferences", "hover_preview", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumnExists(db, "app_preferences", "mpegts_low_latency", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumnExists(db, "app_preferences", "open_in_new_tab", "INTEGER NOT NULL DEFAULT 0");
+}
+
+function ensureColumnExists(db: DatabaseSync, tableName: string, columnName: string, definition: string) {
+  const columns = db
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all() as Array<{ name?: string }>;
+
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
 }
 
 export function getLocalDb() {
@@ -196,6 +262,163 @@ export function getLocalDb() {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+export function getAppPreferences(ownerId: string) {
+  return getLocalDb()
+    .prepare(`
+      SELECT
+        owner_id as ownerId,
+        theme_mode as themeMode,
+        category_sort as categorySort,
+        category_language as categoryLanguage,
+        exclude_follower_only as excludeFollowerOnly,
+        playback_engine as playbackEngine,
+        low_latency_auto_fallback as lowLatencyAutoFallback,
+        low_latency_catch_up as lowLatencyCatchUp,
+        auto_open_chat as autoOpenChat,
+        chat_auto_login as chatAutoLogin,
+        hover_preview as hoverPreview,
+        mpegts_low_latency as mpegtsLowLatency,
+        open_in_new_tab as openInNewTab,
+        created_at as createdAt,
+        updated_at as updatedAt
+      FROM app_preferences
+      WHERE owner_id = ?
+      LIMIT 1
+    `)
+    .get(ownerId) as AppPreferencesRecord | undefined;
+}
+
+export function upsertAppPreferences(
+  ownerId: string,
+  input: {
+    themeMode?: string;
+    categorySort?: string;
+    categoryLanguage?: string | null;
+    excludeFollowerOnly?: boolean;
+    playbackEngine?: string;
+    lowLatencyAutoFallback?: boolean;
+    lowLatencyCatchUp?: boolean;
+    autoOpenChat?: boolean;
+    chatAutoLogin?: boolean;
+    hoverPreview?: boolean;
+    mpegtsLowLatency?: boolean;
+    openInNewTab?: boolean;
+  }
+) {
+  const existing = getAppPreferences(ownerId);
+  const timestamp = nowIso();
+
+  getLocalDb().prepare(`
+    INSERT INTO app_preferences (
+      owner_id, theme_mode, category_sort, category_language, exclude_follower_only,
+      playback_engine, low_latency_auto_fallback, low_latency_catch_up, auto_open_chat, chat_auto_login, hover_preview, mpegts_low_latency, open_in_new_tab, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_id) DO UPDATE SET
+      theme_mode = excluded.theme_mode,
+      category_sort = excluded.category_sort,
+      category_language = excluded.category_language,
+      exclude_follower_only = excluded.exclude_follower_only,
+      playback_engine = excluded.playback_engine,
+      low_latency_auto_fallback = excluded.low_latency_auto_fallback,
+      low_latency_catch_up = excluded.low_latency_catch_up,
+      auto_open_chat = excluded.auto_open_chat,
+      chat_auto_login = excluded.chat_auto_login,
+      hover_preview = excluded.hover_preview,
+      mpegts_low_latency = excluded.mpegts_low_latency,
+      open_in_new_tab = excluded.open_in_new_tab,
+      updated_at = excluded.updated_at
+  `).run(
+    ownerId,
+    input.themeMode ?? existing?.themeMode ?? "dark",
+    input.categorySort ?? existing?.categorySort ?? "popular",
+    input.categoryLanguage ?? existing?.categoryLanguage ?? null,
+    input.excludeFollowerOnly === undefined ? (existing?.excludeFollowerOnly ?? 0) : input.excludeFollowerOnly ? 1 : 0,
+    input.playbackEngine ?? existing?.playbackEngine ?? "lowlatency",
+    input.lowLatencyAutoFallback === undefined
+      ? (existing?.lowLatencyAutoFallback ?? 1)
+      : input.lowLatencyAutoFallback
+        ? 1
+        : 0,
+    input.lowLatencyCatchUp === undefined
+      ? (existing?.lowLatencyCatchUp ?? 1)
+      : input.lowLatencyCatchUp
+        ? 1
+        : 0,
+    input.autoOpenChat === undefined
+      ? (existing?.autoOpenChat ?? 1)
+      : input.autoOpenChat
+        ? 1
+        : 0,
+    input.chatAutoLogin === undefined
+      ? (existing?.chatAutoLogin ?? 0)
+      : input.chatAutoLogin
+        ? 1
+        : 0,
+    input.hoverPreview === undefined
+      ? (existing?.hoverPreview ?? 1)
+      : input.hoverPreview
+        ? 1
+        : 0,
+    input.mpegtsLowLatency === undefined
+      ? (existing?.mpegtsLowLatency ?? 1)
+      : input.mpegtsLowLatency
+        ? 1
+        : 0,
+    input.openInNewTab === undefined
+      ? (existing?.openInNewTab ?? 0)
+      : input.openInNewTab
+        ? 1
+        : 0,
+    existing?.createdAt ?? timestamp,
+    timestamp
+  );
+
+  return getAppPreferences(ownerId) as AppPreferencesRecord;
+}
+
+export function getBroadcasterChatSettings(broadcasterId: string) {
+  return getLocalDb()
+    .prepare(`
+      SELECT
+        broadcaster_id as broadcasterId,
+        follower_mode as followerMode,
+        follower_mode_duration as followerModeDuration,
+        checked_at as checkedAt
+      FROM broadcaster_chat_settings
+      WHERE broadcaster_id = ?
+      LIMIT 1
+    `)
+    .get(broadcasterId) as BroadcasterChatSettingsRecord | undefined;
+}
+
+export function upsertBroadcasterChatSettings(input: {
+  broadcasterId: string;
+  followerMode: boolean;
+  followerModeDuration?: number | null;
+  checkedAt?: string;
+}) {
+  const checkedAt = input.checkedAt ?? nowIso();
+
+  getLocalDb().prepare(`
+    INSERT INTO broadcaster_chat_settings (
+      broadcaster_id, follower_mode, follower_mode_duration, checked_at
+    )
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(broadcaster_id) DO UPDATE SET
+      follower_mode = excluded.follower_mode,
+      follower_mode_duration = excluded.follower_mode_duration,
+      checked_at = excluded.checked_at
+  `).run(
+    input.broadcasterId,
+    input.followerMode ? 1 : 0,
+    input.followerModeDuration ?? null,
+    checkedAt
+  );
+
+  return getBroadcasterChatSettings(input.broadcasterId) as BroadcasterChatSettingsRecord;
 }
 
 export function listFavorites(userId: string) {

@@ -1,0 +1,19 @@
+services:
+  sifttv:
+    build: .
+    container_name: sifttv
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - sifttv-data:/app/prisma
+    environment:
+      - AUTH_URL=http://localhost:3000
+      - TWITCH_CLIENT_ID=
+      - TWITCH_CLIENT_SECRET=
+      - AUTH_SECRET=
+      - DATABASE_URL=file:/app/prisma/data.db
+      - INLINE_REFRESH_JOBS=true
+
+volumes:
+  sifttv-data:
