@@ -85,6 +85,11 @@ export function StreamCard(props: StreamCardProps) {
           {typeof props.viewerCount === "number" ? (
             <span className="viewer-chip stream-thumb-chip">{formatViewerCount(props.viewerCount)} viewers</span>
           ) : null}
+          {hoverPreview && hovered && typeof props.viewerCount === "number" ? (
+            <div className={"stream-preview-popover" + (below ? " stream-preview-below" : "")} style={{ translate: `calc(-50% + ${shiftX}px) 0` }}>
+              <img src={previewUrl} alt="" className="stream-preview-img" />
+            </div>
+          ) : null}
         </div>
         <div className="stream-content">
           <div className="stream-topline">
@@ -111,11 +116,6 @@ export function StreamCard(props: StreamCardProps) {
           </div>
         </div>
       </article>
-      {hoverPreview && hovered && typeof props.viewerCount === "number" ? (
-        <div className={"stream-preview-popover" + (below ? " stream-preview-below" : "")} style={{ translate: `calc(-50% + ${shiftX}px) 0` }}>
-          <img src={previewUrl} alt="" className="stream-preview-img" />
-        </div>
-      ) : null}
     </div>
   );
 }
