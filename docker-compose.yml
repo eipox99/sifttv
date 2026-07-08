@@ -1,16 +1,33 @@
 services:
-  sifttv:
-    build: .
-    container_name: sifttv
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    volumes:
-      - /mnt/user/appdata/sifttv/prisma:/app/prisma
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: sifttv-tailscale
+    hostname: sifttv
     environment:
-      - AUTH_URL=http://localhost:3000
+      - TS_STATE_DIR=/var/lib/tailscale
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    restart: unless-stopped
+
+  sifttv:
+    network_mode: "service:tailscale"
+    build:
+      context: https://github.com/eipox99/sifttv.git
+    container_name: sifttv-app
+    depends_on:
+      - tailscale
+    restart: unless-stopped
+    environment:
+      - AUTH_URL=https://sifttv.trex-cliff.ts.net
       - TWITCH_CLIENT_ID=
       - TWITCH_CLIENT_SECRET=
       - AUTH_SECRET=
       - DATABASE_URL=file:/app/prisma/data.db
       - INLINE_REFRESH_JOBS=true
+    volumes:
+      - /mnt/user/appdata/sifttv/prisma:/app/prisma
+
+volumes:
+  tailscale-state:
