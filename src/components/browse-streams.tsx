@@ -28,31 +28,33 @@ type BrowseStreamsProps = {
 };
 
 export function BrowseStreams({ initialStreams, initialCursor, initialAvailableLanguages }: BrowseStreamsProps) {
-  const [sort, setSort] = useState<"popular" | "low_to_high_exact">(() => {
-    if (typeof window === "undefined") return "popular";
-    try {
-      const saved = window.localStorage.getItem("browseSort");
-      if (saved === "popular" || saved === "low_to_high_exact") return saved;
-    } catch { /* ignore */ }
-    return "popular";
-  });
+  const [sort, setSort] = useState<"popular" | "low_to_high_exact">("popular");
   const [streams, setStreams] = useState<StreamData[]>(initialStreams);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [nextExactOffset, setNextExactOffset] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [language, setLanguage] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return window.localStorage.getItem("browseLanguage") ?? "";
-  });
+  const [language, setLanguage] = useState("");
   const persistedRef = useRef(false);
 
-  // On mount, if there's a restored language from localStorage, fetch data for it
-  // instead of showing the SSR snapshot (which was for no-language-filter).
-  const restoredLanguageRef = useRef(language);
+  // Hydrate language/sort from localStorage after mount (SSR doesn't have it).
+  // Must use handleLanguageChange so streams are re-fetched for the language.
+  const hydratedRef = useRef(false);
   useEffect(() => {
-    if (restoredLanguageRef.current) {
-      handleLanguageChange(restoredLanguageRef.current);
-    }
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+
+    try {
+      const savedLang = window.localStorage.getItem("browseLanguage");
+      const savedSort = window.localStorage.getItem("browseSort");
+
+      if (savedLang !== null && savedLang !== "") {
+        handleLanguageChange(savedLang);
+        return;
+      }
+      if (savedSort === "popular" || savedSort === "low_to_high_exact") {
+        setSort(savedSort);
+      }
+    } catch { /* ignore */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -84,6 +84,7 @@ export function CategoryExplorer({
 }: CategoryExplorerProps) {
   const [sort, setSort] = useState<"popular" | "low_to_high_exact">(initialSort);
   const [language, setLanguage] = useState(initialLanguage);
+  const langHydratedRef = useRef(false);
   const [excludeFollowerOnly, setExcludeFollowerOnly] = useState(initialExcludeFollowerOnly);
   const [discoveredLanguages, setDiscoveredLanguages] = useState<string[]>(() => {
     const merged = new Set([...initialAvailableLanguages, ...collectLanguages(initialPopular)]);
@@ -162,6 +163,27 @@ export function CategoryExplorer({
       })
     });
   }
+
+  // Hydrate language from localStorage after mount (the SSR fallback may differ).
+  useEffect(() => {
+    if (!langHydratedRef.current) {
+      langHydratedRef.current = true;
+      try {
+        const saved = window.localStorage.getItem("categoryLanguage");
+        if (saved !== null) {
+          setLanguage(saved);
+        }
+      } catch { /* ignore */ }
+    }
+  }, []);
+
+  // Persist every change, but only after hydration (don't overwrite with SSR value).
+  useEffect(() => {
+    if (!langHydratedRef.current) return;
+    try {
+      window.localStorage.setItem("categoryLanguage", language);
+    } catch { /* ignore */ }
+  }, [language]);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
