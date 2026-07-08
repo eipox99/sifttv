@@ -8,43 +8,47 @@ import { serializeFavorite } from "@/lib/serializers";
 import { getStreamsByUserIds } from "@/lib/twitch";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return jsonError("You need to sign in to use favorites.", 401);
-  }
-
-  const favorites = listFavorites(session.user.id);
-  const data = favorites.map((favorite) => ({
-    ...serializeFavorite(favorite),
-    isLive: false as boolean,
-    viewerCount: null as number | null,
-    title: null as string | null
-  }));
-
-  if (hasTwitchClientCredentials() && data.length > 0) {
-    try {
-      const streams = await getStreamsByUserIds(data.map((favorite) => favorite.channelId));
-      const liveByUserId = new Map(streams.map((stream) => [stream.user_id, stream]));
-
-      for (const favorite of data) {
-        const live = liveByUserId.get(favorite.channelId);
-        if (!live) {
-          continue;
-        }
-
-        favorite.isLive = true;
-        favorite.viewerCount = live.viewer_count;
-        favorite.title = live.title;
-        favorite.startedAt = live.started_at;
-        favorite.categoryId = live.game_id || favorite.categoryId;
-        favorite.categoryName = live.game_name || favorite.categoryName;
-      }
-    } catch {
-      // Live augmentation is best-effort; fall back to saved data.
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return jsonError("You need to sign in to use favorites.", 401);
     }
-  }
 
-  return NextResponse.json({ data });
+    const favorites = listFavorites(session.user.id);
+    const data = favorites.map((favorite) => ({
+      ...serializeFavorite(favorite),
+      isLive: false as boolean,
+      viewerCount: null as number | null,
+      title: null as string | null
+    }));
+
+    if (hasTwitchClientCredentials() && data.length > 0) {
+      try {
+        const streams = await getStreamsByUserIds(data.map((favorite) => favorite.channelId));
+        const liveByUserId = new Map(streams.map((stream) => [stream.user_id, stream]));
+
+        for (const favorite of data) {
+          const live = liveByUserId.get(favorite.channelId);
+          if (!live) {
+            continue;
+          }
+
+          favorite.isLive = true;
+          favorite.viewerCount = live.viewer_count;
+          favorite.title = live.title;
+          favorite.startedAt = live.started_at;
+          favorite.categoryId = live.game_id || favorite.categoryId;
+          favorite.categoryName = live.game_name || favorite.categoryName;
+        }
+      } catch {
+        // Live augmentation is best-effort; fall back to saved data.
+      }
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    return jsonError(error instanceof Error ? error.message : "Failed to load favorites.", 500);
+  }
 }
 
 export async function POST(request: NextRequest) {
