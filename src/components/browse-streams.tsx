@@ -24,22 +24,62 @@ type StreamData = {
 type BrowseStreamsProps = {
   initialStreams: StreamData[];
   initialCursor: string | null;
+  initialAvailableLanguages: string[];
 };
 
-export function BrowseStreams({ initialStreams, initialCursor }: BrowseStreamsProps) {
+export function BrowseStreams({ initialStreams, initialCursor, initialAvailableLanguages }: BrowseStreamsProps) {
+  const [sort, setSort] = useState<"popular" | "low_to_high_exact">(() => {
+    if (typeof window === "undefined") return "popular";
+    try {
+      const saved = window.localStorage.getItem("browseSort");
+      if (saved === "popular" || saved === "low_to_high_exact") return saved;
+    } catch { /* ignore */ }
+    return "popular";
+  });
   const [streams, setStreams] = useState<StreamData[]>(initialStreams);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
+  const [nextExactOffset, setNextExactOffset] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [language, setLanguage] = useState("");
+  const [language, setLanguage] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem("browseLanguage") ?? "";
+  });
+  const persistedRef = useRef(false);
+
+  // On mount, if there's a restored language from localStorage, fetch data for it
+  // instead of showing the SSR snapshot (which was for no-language-filter).
+  const restoredLanguageRef = useRef(language);
+  useEffect(() => {
+    if (restoredLanguageRef.current) {
+      handleLanguageChange(restoredLanguageRef.current);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist language/sort across navigations.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("browseLanguage", language);
+    } catch { /* ignore */ }
+  }, [language]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("browseSort", sort);
+    } catch { /* ignore */ }
+  }, [sort]);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const inFlightRef = useRef(false);
 
   const availableLanguages = useMemo(() => {
-    const codes = new Set(streams.map((s) => normalizeLanguageCode(s.language)).filter(Boolean) as string[]);
+    const codes = new Set(initialAvailableLanguages);
+    for (const stream of streams) {
+      const code = normalizeLanguageCode(stream.language);
+      if (code) codes.add(code);
+    }
     return Array.from(codes).sort((a, b) => a.localeCompare(b));
-  }, [streams]);
+  }, [initialAvailableLanguages, streams]);
 
-  const fetchPage = useCallback(async (pageCursor: string, pageLanguage: string, replace: boolean) => {
+  const fetchPopular = useCallback(async (pageCursor: string, pageLanguage: string, replace: boolean) => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     setLoading(true);
@@ -54,7 +94,6 @@ export function BrowseStreams({ initialStreams, initialCursor }: BrowseStreamsPr
       if (!response.ok) return;
 
       const next: StreamData[] = payload.data ?? [];
-      const nextCursor = payload.cursor ?? null;
 
       if (replace) {
         setStreams(next);
@@ -68,7 +107,7 @@ export function BrowseStreams({ initialStreams, initialCursor }: BrowseStreamsPr
           return merged;
         });
       }
-      setCursor(nextCursor);
+      setCursor(payload.cursor ?? null);
     } catch {
       // transient
     } finally {
@@ -77,27 +116,84 @@ export function BrowseStreams({ initialStreams, initialCursor }: BrowseStreamsPr
     }
   }, []);
 
-  // When the language changes, start a fresh fetch from the beginning.
-  const initialLoadDone = useRef(false);
-  useEffect(() => {
-    if (!initialLoadDone.current) {
-      initialLoadDone.current = true;
-      return;
+  const fetchExact = useCallback(async (offset: number, pageLanguage: string, replace: boolean) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    setLoading(true);
+
+    try {
+      const params = new URLSearchParams({
+        language: pageLanguage,
+        offset: String(offset),
+        limit: String(CATEGORY_STREAM_BATCH_SIZE)
+      });
+
+      const response = await fetch(`/api/streams/all/exact?${params}`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) return;
+
+      const next: StreamData[] = payload.data ?? [];
+      setNextExactOffset(payload.nextOffset ?? null);
+
+      if (replace) {
+        setStreams(next);
+      } else {
+        setStreams((current) => [...current, ...next]);
+      }
+    } catch {
+      // transient
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
     }
+  }, []);
+
+  const handleLanguageChange = useCallback((nextLanguage: string) => {
+    setLanguage(nextLanguage);
+    setSort("popular");
     inFlightRef.current = false;
-    setCursor(null);
+    setCursor(initialCursor);
     setStreams([]);
-    void fetchPage("", language, true);
+    if (!nextLanguage) {
+      // No filter — start from the same initial SSR position.
+      void fetchPopular(initialCursor ?? "", "", true);
+    } else {
+      void fetchPopular("", nextLanguage, true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCursor]);
+
+  const handleSortChange = useCallback((nextSort: "popular" | "low_to_high_exact") => {
+    setSort(nextSort);
+    inFlightRef.current = false;
+    setStreams([]);
+    setCursor(null);
+    setNextExactOffset(null);
+
+    if (nextSort === "popular") {
+      void fetchPopular("", language, true);
+    } else {
+      void fetchExact(0, language, true);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language]);
 
   // Infinite scroll: load more pages when the sentinel comes into view.
   useEffect(() => {
+    if (loading) return;
+
+    const canLoadMore = sort === "popular" ? cursor : nextExactOffset;
+    if (!canLoadMore) return;
+
     const node = loadMoreRef.current;
-    if (!node || !cursor || loading) return;
+    if (!node) return;
 
     const handler = () => {
-      void fetchPage(cursor, language, false);
+      if (sort === "popular") {
+        void fetchPopular(cursor!, language, false);
+      } else {
+        void fetchExact(nextExactOffset!, language, false);
+      }
     };
 
     const observer = new IntersectionObserver(
@@ -109,19 +205,23 @@ export function BrowseStreams({ initialStreams, initialCursor }: BrowseStreamsPr
 
     observer.observe(node);
     return () => observer.disconnect();
-  }, [cursor, loading, language, fetchPage]);
+  }, [cursor, nextExactOffset, loading, sort, language, fetchPopular, fetchExact]);
+
+  const canExact = language !== "";
 
   return (
     <section className="stack-lg">
       <div className="panel">
         <p className="eyebrow">Browse</p>
-        <div className="hero-controls">
-          <h1>All streams</h1>
-          {availableLanguages.length > 0 ? (
+        <h1>All streams</h1>
+        {availableLanguages.length > 0 ? (
+          <div className="hero-controls" style={{ justifyContent: "flex-end" }}>
             <select
               value={language}
-              onChange={(event) => setLanguage(event.target.value)}
-              className="text-input text-input-sm"
+              autoComplete="off"
+              onChange={(event) => handleLanguageChange(event.target.value)}
+              className="text-input compact-input select-input"
+              aria-label="Filter streams by language"
             >
               <option value="">All languages</option>
               {availableLanguages.map((code) => (
@@ -130,8 +230,28 @@ export function BrowseStreams({ initialStreams, initialCursor }: BrowseStreamsPr
                 </option>
               ))}
             </select>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
+        {canExact ? (
+          <div className="hero-controls">
+            <div className="segmented">
+              <button
+                type="button"
+                className={sort === "popular" ? "segment active" : "segment"}
+                onClick={() => handleSortChange("popular")}
+              >
+                Popular
+              </button>
+              <button
+                type="button"
+                className={sort === "low_to_high_exact" ? "segment active" : "segment"}
+                onClick={() => handleSortChange("low_to_high_exact")}
+              >
+                Exact low to high
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {streams.length > 0 ? (
@@ -148,7 +268,7 @@ export function BrowseStreams({ initialStreams, initialCursor }: BrowseStreamsPr
         <p className="muted">No live streams match the selected filter.</p>
       )}
 
-      {cursor ? (
+      {(sort === "popular" ? cursor : nextExactOffset) ? (
         <div ref={loadMoreRef} className="stream-load-sentinel">
           {loading ? "Loading more streams" : "Scroll to load more"}
         </div>

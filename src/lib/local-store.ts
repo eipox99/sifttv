@@ -223,6 +223,10 @@ function initializeDatabase(db: DatabaseSync) {
 
     CREATE INDEX IF NOT EXISTS broadcaster_chat_settings_checked_idx
       ON broadcaster_chat_settings(checked_at DESC);
+
+    CREATE TABLE IF NOT EXISTS known_languages (
+      language_code TEXT PRIMARY KEY
+    );
   `);
 
   ensureColumnExists(db, "app_preferences", "exclude_follower_only", "INTEGER NOT NULL DEFAULT 0");
@@ -842,4 +846,20 @@ export function createSnapshotWithStreams(input: {
   }
 
   return getSnapshotById(snapshotId) as CategorySnapshotWithStreams;
+}
+
+export function getKnownLanguages() {
+  const rows = getLocalDb()
+    .prepare("SELECT language_code FROM known_languages ORDER BY language_code")
+    .all() as Array<{ language_code: string }>;
+  return rows.map((r) => r.language_code);
+}
+
+export function addKnownLanguages(codes: string[]) {
+  const insert = getLocalDb().prepare(
+    "INSERT OR IGNORE INTO known_languages (language_code) VALUES (?)"
+  );
+  for (const code of codes) {
+    insert.run(code);
+  }
 }

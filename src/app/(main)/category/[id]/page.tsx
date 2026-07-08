@@ -4,7 +4,10 @@ import { OnboardingCard } from "@/components/onboarding-card";
 import { hasTwitchClientCredentials } from "@/lib/env";
 import { CATEGORY_STREAM_BATCH_SIZE } from "@/lib/pagination";
 import { getServerAppPreferences } from "@/lib/preferences";
+import { addKnownLanguages } from "@/lib/local-store";
 import { getGamesByIds } from "@/lib/twitch";
+
+export const dynamic = "force-dynamic";
 
 export default async function CategoryPage({
   params
@@ -32,6 +35,9 @@ export default async function CategoryPage({
       }),
       discoverCategoryLanguages(id)
     ]);
+
+    // Merge into the persistent master language list.
+    addKnownLanguages(availableLanguages);
 
     const categoryName = categoryResponse.data[0]?.name ?? "Unknown category";
     const initialPopular = streamsResponse.data;

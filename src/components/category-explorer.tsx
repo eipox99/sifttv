@@ -151,6 +151,7 @@ export function CategoryExplorer({
   }) {
     await fetch("/api/preferences", {
       method: "PATCH",
+      keepalive: true,
       headers: {
         "Content-Type": "application/json"
       },
@@ -546,6 +547,7 @@ export function CategoryExplorer({
           </div>
           <select
             value={language}
+            autoComplete="off"
             onChange={(event) => {
               const nextLanguage = normalizeLanguageCode(event.target.value) ?? "";
               setLanguage(nextLanguage);
