@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { buildTwitchThumbnail, formatDateTime } from "@/lib/formatters";
 import { jsonError } from "@/lib/http";
 import { getAllStreams } from "@/lib/twitch";
 
@@ -22,8 +23,9 @@ export async function GET(request: NextRequest) {
       title: stream.title,
       viewerCount: stream.viewer_count,
       startedAt: stream.started_at,
+      startedAtLabel: formatDateTime(stream.started_at),
       language: stream.language,
-      thumbnailUrl: stream.thumbnail_url,
+      thumbnailUrl: buildTwitchThumbnail(stream.thumbnail_url),
       categoryId: stream.game_id,
       categoryName: stream.game_name
     }));

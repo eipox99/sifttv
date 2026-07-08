@@ -14,6 +14,7 @@ type StreamData = {
   title: string;
   viewerCount: number | null;
   startedAt: string;
+  startedAtLabel: string;
   language: string;
   thumbnailUrl: string;
   categoryId: string;
@@ -140,7 +141,6 @@ export function BrowseStreams({ initialStreams, initialCursor }: BrowseStreamsPr
               key={stream.id}
               {...stream}
               url={`https://www.twitch.tv/${stream.login}`}
-              startedAtLabel=""
             />
           ))}
         </div>

@@ -1,6 +1,7 @@
 import { BrowseStreams } from "@/components/browse-streams";
 import { OnboardingCard } from "@/components/onboarding-card";
 import { hasTwitchClientCredentials } from "@/lib/env";
+import { buildTwitchThumbnail, formatDateTime } from "@/lib/formatters";
 import { CATEGORY_STREAM_BATCH_SIZE } from "@/lib/pagination";
 import { getAllStreams } from "@/lib/twitch";
 
@@ -19,8 +20,9 @@ export default async function BrowsePage() {
       title: stream.title,
       viewerCount: stream.viewer_count,
       startedAt: stream.started_at,
+      startedAtLabel: formatDateTime(stream.started_at),
       language: stream.language,
-      thumbnailUrl: stream.thumbnail_url,
+      thumbnailUrl: buildTwitchThumbnail(stream.thumbnail_url),
       categoryId: stream.game_id,
       categoryName: stream.game_name
     }));
