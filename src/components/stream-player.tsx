@@ -142,6 +142,8 @@ const LIVE_EDGE_THRESHOLD_SECONDS = 8;
 // watching behind the live edge, where currentTime keeps advancing.
 const OFFLINE_STALL_SECONDS = 12;
 
+const PLAYER_VOLUME_KEY = "sifttv:player-volume";
+
 const LOW_LATENCY_SYNC_DURATION_COUNT = 2;
 const LOW_LATENCY_MAX_PLAYBACK_RATE = 1.5;
 const LOW_LATENCY_MAX_LATENCY_DURATION_COUNT = 5;
@@ -691,6 +693,54 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
     return () => {
       events.forEach((event) => video.removeEventListener(event, update));
       window.clearInterval(interval);
+    };
+  }, []);
+
+  // Persist the player volume/mute across stream switches and reconnects.
+  // Native <video controls> resets volume to 100% whenever fresh media loads,
+  // so we restore the saved level on load and save on every volume change.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const restore = () => {
+      try {
+        const raw = window.localStorage.getItem(PLAYER_VOLUME_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw) as { volume?: number; muted?: boolean };
+        if (typeof saved.volume === "number" && saved.volume >= 0 && saved.volume <= 1) {
+          video.volume = saved.volume;
+        }
+        if (typeof saved.muted === "boolean") {
+          video.muted = saved.muted;
+        }
+      } catch {
+        // ignore malformed/unavailable storage
+      }
+    };
+
+    const persist = () => {
+      try {
+        window.localStorage.setItem(
+          PLAYER_VOLUME_KEY,
+          JSON.stringify({ volume: video.volume, muted: video.muted })
+        );
+      } catch {
+        // storage unavailable; ignore
+      }
+    };
+
+    restore();
+    video.addEventListener("volumechange", persist);
+    video.addEventListener("loadedmetadata", restore);
+    video.addEventListener("loadeddata", restore);
+
+    return () => {
+      video.removeEventListener("volumechange", persist);
+      video.removeEventListener("loadedmetadata", restore);
+      video.removeEventListener("loadeddata", restore);
     };
   }, []);
 
