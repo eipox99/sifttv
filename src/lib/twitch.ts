@@ -334,6 +334,25 @@ export async function getStreamsByCategory(input: {
   });
 }
 
+export async function getAllStreams(input: {
+  language?: string | null;
+  cursor?: string;
+  limit?: number;
+}) {
+  const query: Record<string, string | undefined> = {
+    first: String(input.limit ?? 100),
+    after: input.cursor
+  };
+  if (input.language) {
+    query.language = input.language;
+  }
+
+  return twitchApiRequest<TwitchResponse<TwitchStream>>("/streams", {
+    cacheTtlMs: 15_000,
+    query
+  });
+}
+
 export async function getStreamByUserLogin(login: string) {
   const response = await twitchApiRequest<TwitchResponse<TwitchStream>>("/streams", {
     cacheTtlMs: 20_000,

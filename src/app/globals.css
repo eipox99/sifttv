@@ -258,6 +258,38 @@ h3 {
   gap: 14px;
 }
 
+.browse-all-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  overflow: hidden;
+  height: 100%;
+  text-decoration: none;
+  color: inherit;
+}
+
+.browse-all-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 42px rgba(31, 38, 58, 0.14);
+}
+
+.browse-all-art {
+  aspect-ratio: 3 / 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+
+.browse-all-icon {
+  width: 48px;
+  height: 48px;
+  color: #fefefe;
+}
+
 .category-card {
   display: flex;
   flex-direction: column;
@@ -749,9 +781,11 @@ h3 {
 }
 
 .sidebar-heading {
-  font-size: 1.3rem;
-  font-weight: 600;
+  font-size: 1.55rem;
+  font-weight: 700;
   margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
 }
 
 .sidebar-empty {

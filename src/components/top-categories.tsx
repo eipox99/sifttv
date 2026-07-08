@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import { CategoryCard } from "@/components/category-card";
 
@@ -87,6 +88,16 @@ export function TopCategories({ initialCategories, initialCursor }: TopCategorie
         <span className="pill">{categories.length}</span>
       </div>
       <div className="category-grid">
+        <Link href="/browse" className="browse-all-card">
+          <div className="browse-all-art">
+            <svg className="browse-all-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+          </div>
+          <div className="category-meta">
+            <h3>Browse all streams</h3>
+          </div>
+        </Link>
         {categories.map((category) => (
           <CategoryCard key={category.id} {...category} />
         ))}
