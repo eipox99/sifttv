@@ -12,14 +12,18 @@ export function formatViewerCount(value: number) {
   }).format(value);
 }
 
-const languageDisplayNames = new Intl.DisplayNames(["en"], {
-  type: "language"
-});
-
 export function normalizeLanguageCode(value: string | null | undefined) {
   const normalized = value?.trim().toLowerCase();
   return normalized ? normalized : null;
 }
+
+const languageLabelOverrides: Record<string, string> = {
+  "zh-hk": "Chinese (Hong Kong)",
+};
+
+const languageDisplayNames = new Intl.DisplayNames(["en"], {
+  type: "language",
+});
 
 export function formatLanguageLabel(value: string | null | undefined) {
   const normalized = normalizeLanguageCode(value);
@@ -31,12 +35,17 @@ export function formatLanguageLabel(value: string | null | undefined) {
     return "Other";
   }
 
-  try {
-    const label = languageDisplayNames.of(normalized);
-    if (label && label.toLowerCase() !== normalized) {
-      return `${label} (${normalized.toUpperCase()})`;
-    }
-  } catch {}
+  const label = languageLabelOverrides[normalized] ?? (() => {
+    try {
+      const display = languageDisplayNames.of(normalized);
+      if (display && display.toLowerCase() !== normalized) return display;
+    } catch {}
+    return null;
+  })();
+
+  if (label) {
+    return `${label} (${normalized.toUpperCase()})`;
+  }
 
   return normalized.toUpperCase();
 }

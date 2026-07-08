@@ -35,11 +35,29 @@ export function StreamCard(props: StreamCardProps) {
   const [shiftX, setShiftX] = useState(0);
   const [below, setBelow] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const previewActive = useRef(false);
   const { hoverPreview } = usePreferences();
   const previewUrl = buildLivePreviewUrl(props.login, 1280, 720);
 
-  const showPreview = useCallback(() => {
-    if (!hoverPreview) return;
+  const isOverTriggerZone = useCallback((clientX: number, clientY: number) => {
+    const el = wrapRef.current;
+    if (!el) return false;
+    const thumb = el.querySelector<HTMLElement>(".stream-thumb-frame");
+    if (thumb) {
+      const r = thumb.getBoundingClientRect();
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) return true;
+    }
+    const popover = el.querySelector<HTMLElement>(".stream-preview-popover");
+    if (popover) {
+      const r = popover.getBoundingClientRect();
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) return true;
+    }
+    return false;
+  }, []);
+
+  const showPreview = useCallback((clientX: number, clientY: number) => {
+    if (!hoverPreview || !isOverTriggerZone(clientX, clientY)) return;
+    previewActive.current = true;
     setHovered(true);
     const el = wrapRef.current;
     if (!el) return;
@@ -48,10 +66,8 @@ export function StreamCard(props: StreamCardProps) {
     const popoverWidth = Math.min(630, vw * 0.85);
     const popoverHeight = popoverWidth * 9 / 16;
 
-    // vertical — flip below if not enough room above
     setBelow(rect.top < popoverHeight + 24);
 
-    // horizontal — nudge to keep inside viewport
     const center = rect.left + rect.width / 2;
     const leftEdge = center - popoverWidth / 2;
     const rightEdge = center + popoverWidth / 2;
@@ -59,16 +75,42 @@ export function StreamCard(props: StreamCardProps) {
     if (rightEdge > vw) shift = vw - rightEdge;
     else if (leftEdge < 0) shift = -leftEdge;
     setShiftX(shift);
-  }, [hoverPreview]);
+  }, [hoverPreview, isOverTriggerZone]);
 
   const hidePreview = useCallback(() => {
+    previewActive.current = false;
     setHovered(false);
     setShiftX(0);
     setBelow(false);
   }, []);
 
+  const handleMouseEnter = useCallback((e: React.MouseEvent) => {
+    showPreview(e.clientX, e.clientY);
+  }, [showPreview]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const over = isOverTriggerZone(e.clientX, e.clientY);
+    if (over !== previewActive.current) {
+      if (over) {
+        showPreview(e.clientX, e.clientY);
+      } else {
+        hidePreview();
+      }
+    }
+  }, [isOverTriggerZone, showPreview, hidePreview]);
+
+  const handleMouseLeave = useCallback(() => {
+    hidePreview();
+  }, [hidePreview]);
+
   return (
-    <div className="stream-card-wrap" ref={wrapRef}>
+    <div
+      className="stream-card-wrap"
+      ref={wrapRef}
+      onMouseEnter={handleMouseEnter}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
       <article className="stream-card">
         <WatchOverlay
           login={props.login}
@@ -80,15 +122,10 @@ export function StreamCard(props: StreamCardProps) {
           thumbnailUrl={props.thumbnailUrl}
           url={props.url}
         />
-        <div className="stream-thumb-frame" onMouseEnter={showPreview} onMouseLeave={hidePreview}>
+        <div className="stream-thumb-frame">
           <img src={props.thumbnailUrl} alt={props.title} className="stream-thumb" />
           {typeof props.viewerCount === "number" ? (
             <span className="viewer-chip stream-thumb-chip">{formatViewerCount(props.viewerCount)} viewers</span>
-          ) : null}
-          {hoverPreview && hovered && typeof props.viewerCount === "number" ? (
-            <div className={"stream-preview-popover" + (below ? " stream-preview-below" : "")} style={{ translate: `calc(-50% + ${shiftX}px) 0` }}>
-              <img src={previewUrl} alt="" className="stream-preview-img" />
-            </div>
           ) : null}
         </div>
         <div className="stream-content">
@@ -116,6 +153,11 @@ export function StreamCard(props: StreamCardProps) {
           </div>
         </div>
       </article>
+      {hoverPreview && hovered && typeof props.viewerCount === "number" ? (
+        <div className={"stream-preview-popover" + (below ? " stream-preview-below" : "")} style={{ translate: `calc(-50% + ${shiftX}px) 0` }}>
+          <img src={previewUrl} alt="" className="stream-preview-img" />
+        </div>
+      ) : null}
     </div>
   );
 }
