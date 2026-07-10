@@ -79,6 +79,7 @@ export function WatchOverlay(props: WatchTarget) {
       type="button"
       className="stream-card-link"
       aria-label={`Watch ${props.displayName} in app`}
+      title={props.title ?? undefined}
       onClick={() => {
         if (openInNewTab) {
           window.open(`/watch/${props.login}`, "_blank");
@@ -941,11 +942,11 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
           ) : null}
         </div>
         <div className="player-info">
+          <div className="player-info-title">
+            <span className="player-name">{meta.displayName}</span>
+            {meta.title ? <span className="player-title"> - {meta.title}</span> : null}
+          </div>
           <div className="player-info-meta">
-            <div className="player-info-title">
-              <span className="player-name">{meta.displayName}</span>
-              {meta.title ? <span className="player-title"> - {meta.title}</span> : null}
-            </div>
             {meta.categoryName ? (
               meta.categoryId ? (
                 <Link

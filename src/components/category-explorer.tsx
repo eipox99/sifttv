@@ -509,7 +509,17 @@ export function CategoryExplorer({
       }
 
       const nextStreams = payload.data ?? [];
-      setPopularStreams((current) => [...current, ...nextStreams]);
+      setPopularStreams((current) => {
+        const seen = new Set(current.map((s) => s.id));
+        const merged = [...current];
+        for (const stream of nextStreams) {
+          if (!seen.has(stream.id)) {
+            seen.add(stream.id);
+            merged.push(stream);
+          }
+        }
+        return merged;
+      });
       setPopularCursor(payload.cursor);
       mergeDiscoveredLanguages(nextStreams);
     } finally {
