@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasTwitchClientCredentials } from "@/lib/env";
 import { jsonError } from "@/lib/http";
-import { listFavorites, upsertFavorite } from "@/lib/local-store";
+import { listFavorites, migrateFavoritesUserId, upsertFavorite } from "@/lib/local-store";
 import { serializeFavorite } from "@/lib/serializers";
 import { getStreamsByUserIds } from "@/lib/twitch";
 
@@ -12,6 +12,10 @@ export async function GET() {
     const session = await auth();
     if (!session?.user?.id) {
       return jsonError("You need to sign in to use favorites.", 401);
+    }
+
+    if (session.user.legacyId) {
+      migrateFavoritesUserId(session.user.legacyId, session.user.id);
     }
 
     const favorites = listFavorites(session.user.id);
@@ -58,6 +62,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    if (session.user.legacyId) {
+      migrateFavoritesUserId(session.user.legacyId, session.user.id);
+    }
+
     const body = (await request.json()) as {
       channelId?: string;
       broadcasterLogin?: string;

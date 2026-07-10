@@ -9,6 +9,7 @@ declare module "next-auth" {
   interface Session {
     user: DefaultSession["user"] & {
       id: string;
+      legacyId?: string;
     };
   }
 }
@@ -44,8 +45,12 @@ export const authConfig: NextAuthConfig = {
   callbacks: {
     async jwt({ token, account, user }) {
       if (account?.provider === "twitch") {
-        token.sub = user?.id ?? token.sub;
-        token.twitchUserId = account.providerAccountId;
+        const twitchUserId = account.providerAccountId;
+        if (user?.id && user.id !== twitchUserId) {
+          token.legacyId = user.id;
+        }
+        token.sub = twitchUserId;
+        token.twitchUserId = twitchUserId;
         token.twitchAccessToken = account.access_token;
         token.twitchRefreshToken = account.refresh_token;
         token.twitchAccessTokenExpiresAt = account.expires_at;
@@ -73,8 +78,11 @@ export const authConfig: NextAuthConfig = {
       return token;
     },
     session({ session, token }) {
-      if (session.user && token.sub) {
-        session.user.id = token.sub;
+      if (session.user) {
+        session.user.id = token.sub as string;
+        if (token.legacyId) {
+          session.user.legacyId = token.legacyId as string;
+        }
       }
 
       return session;

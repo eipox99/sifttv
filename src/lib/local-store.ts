@@ -524,6 +524,15 @@ export function deleteFavorite(userId: string, channelId: string) {
     .run(userId, channelId);
 }
 
+export function migrateFavoritesUserId(oldUserId: string, newUserId: string) {
+  if (oldUserId === newUserId) return;
+  getLocalDb()
+    .prepare(`
+      UPDATE favorites SET user_id = ? WHERE user_id = ?
+    `)
+    .run(newUserId, oldUserId);
+}
+
 export function findActiveRefreshJob(filtersHash: string) {
   return getLocalDb()
     .prepare(`
