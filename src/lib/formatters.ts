@@ -1,11 +1,16 @@
 export function formatDateTime(value: string | Date) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short"
-  }).format(new Date(value));
+  }).format(date);
 }
 
 export function formatViewerCount(value: number) {
+  if (!Number.isFinite(value) || value < 0) return "0";
   return new Intl.NumberFormat("en-US", {
     notation: value >= 1000 ? "compact" : "standard",
     maximumFractionDigits: 1

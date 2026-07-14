@@ -10,7 +10,6 @@
     "worker": "tsx scripts/worker.ts"
   },
   "dependencies": {
-    "@auth/prisma-adapter": "^2.8.0",
     "@prisma/client": "^5.22.0",
     "bullmq": "^5.40.3",
     "hls.js": "^1.6.16",

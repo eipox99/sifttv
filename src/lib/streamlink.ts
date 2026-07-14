@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
 
-const STREAMLINK_BIN = process.env.STREAMLINK_BIN ?? "streamlink";
-const FFMPEG_BIN = process.env.FFMPEG_BIN ?? "ffmpeg";
+import { env } from "@/lib/env";
+
+const STREAMLINK_BIN = env.STREAMLINK_BIN;
+const FFMPEG_BIN = env.FFMPEG_BIN;
 const STREAMLINK_TIMEOUT_MS = 45_000;
 
 const TWITCH_LOGIN_PATTERN = /^[a-zA-Z0-9_]{1,25}$/;

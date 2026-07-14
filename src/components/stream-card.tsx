@@ -123,7 +123,7 @@ export function StreamCard(props: StreamCardProps) {
           url={props.url}
         />
         <div className="stream-thumb-frame">
-          <img src={props.thumbnailUrl} alt={props.title} className="stream-thumb" />
+          <img src={props.thumbnailUrl} alt={props.title} className="stream-thumb" loading="lazy" />
           {typeof props.viewerCount === "number" ? (
             <span className="viewer-chip stream-thumb-chip">{formatViewerCount(props.viewerCount)} viewers</span>
           ) : null}
@@ -155,7 +155,7 @@ export function StreamCard(props: StreamCardProps) {
       </article>
       {hoverPreview && hovered && typeof props.viewerCount === "number" ? (
         <div className={"stream-preview-popover" + (below ? " stream-preview-below" : "")} style={{ translate: `calc(-50% + ${shiftX}px) 0` }}>
-          <img src={previewUrl} alt="" className="stream-preview-img" />
+          <img src={previewUrl} alt="" className="stream-preview-img" loading="lazy" />
         </div>
       ) : null}
     </div>

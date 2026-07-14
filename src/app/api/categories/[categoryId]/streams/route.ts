@@ -28,7 +28,7 @@ function parseNonNegativeInteger(value: string | null, fallback = 0) {
 }
 
 function parseBoolean(value: string | null) {
-  return value === "true";
+  return value === "true" || value === "1";
 }
 
 export async function GET(

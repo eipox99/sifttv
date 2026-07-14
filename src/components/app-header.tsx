@@ -14,7 +14,7 @@ export function AppHeader({ authReady, initialThemeMode }: AppHeaderProps) {
     <header className="app-header">
       <div className="brand">
         <Link href="/" className="brand-link">
-          <img src="/logo.png" alt="" className="brand-logo" aria-hidden="true" />
+          <img src="/logo.png" alt="" className="brand-logo" aria-hidden="true" loading="lazy" />
           <span>SiftTV</span>
         </Link>
         <p className="brand-copy">

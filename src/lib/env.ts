@@ -1,13 +1,14 @@
 import { z } from "zod";
 
 const envSchema = z.object({
-  APP_URL: z.string().url().default("http://localhost:3000"),
   TWITCH_CLIENT_ID: z.string().min(1).optional(),
   TWITCH_CLIENT_SECRET: z.string().min(1).optional(),
   TWITCH_REDIRECT_URI: z.string().url().optional(),
   DATABASE_URL: z.string().min(1).optional(),
   AUTH_SECRET: z.string().min(1).optional(),
   REDIS_URL: z.string().url().optional(),
+  STREAMLINK_BIN: z.string().min(1).default("streamlink"),
+  FFMPEG_BIN: z.string().min(1).default("ffmpeg"),
   INLINE_REFRESH_JOBS: z.enum(["true", "false"]).default("true"),
   TWITCH_MAX_CRAWL_PAGES: z.coerce.number().int().min(0).default(0)
 });
@@ -17,7 +18,6 @@ function optionalEnv(value: string | undefined) {
 }
 
 export const env = envSchema.parse({
-  APP_URL: process.env.APP_URL,
   TWITCH_CLIENT_ID: optionalEnv(process.env.TWITCH_CLIENT_ID),
   TWITCH_CLIENT_SECRET: optionalEnv(process.env.TWITCH_CLIENT_SECRET),
   TWITCH_REDIRECT_URI: optionalEnv(process.env.TWITCH_REDIRECT_URI),

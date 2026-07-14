@@ -121,7 +121,7 @@ export function SearchExplorer() {
           <div className="category-list">
             {categories.map((category) => (
               <Link key={category.id} href={`/category/${category.id}`} className="search-category-row">
-                <img src={category.boxArtUrl} alt={category.name} className="search-category-thumb" />
+                <img src={category.boxArtUrl} alt={category.name} className="search-category-thumb" loading="lazy" />
                 <div>
                   <strong>{category.name}</strong>
                   <div className="muted">Open category directory</div>
