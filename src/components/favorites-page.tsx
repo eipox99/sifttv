@@ -162,7 +162,7 @@ export function FavoritesPage() {
 
       {tab === "categories" ? (
         favCategories.length > 0 ? (
-          <div className="category-grid">
+          <div className="category-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(140px, 190px))" }}>
             {favCategories.map((cat) => (
               <CategoryCard
                 key={cat.id}
