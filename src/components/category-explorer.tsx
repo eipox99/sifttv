@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
+import { CategoryFavoriteButton } from "@/components/category-favorite-button";
 import { StreamCard } from "@/components/stream-card";
 import { formatDateTime, formatLanguageLabel, normalizeLanguageCode } from "@/lib/formatters";
 import { CATEGORY_STREAM_BATCH_SIZE } from "@/lib/pagination";
@@ -48,6 +49,7 @@ type ActiveJob = {
 type CategoryExplorerProps = {
   categoryId: string;
   categoryName: string;
+  boxArtUrl?: string;
   initialPopular: StreamItem[];
   initialCursor: string | null;
   initialSort: "popular" | "low_to_high_exact";
@@ -74,6 +76,7 @@ function compareLanguages(left: string, right: string) {
 export function CategoryExplorer({
   categoryId,
   categoryName,
+  boxArtUrl,
   initialPopular,
   initialCursor,
   initialSort,
@@ -546,6 +549,13 @@ export function CategoryExplorer({
         <div>
           <p className="eyebrow">Category</p>
           <h1>{categoryName}</h1>
+          <div className="stack-xs" style={{ marginTop: "0.5rem" }}>
+            <CategoryFavoriteButton
+              categoryId={categoryId}
+              categoryName={categoryName}
+              boxArtUrl={boxArtUrl}
+            />
+          </div>
           <p className="muted">
             Popular mode reads Twitch directly. Exact low-to-high builds a deduplicated category snapshot and keeps
             the previous snapshot visible during refresh.

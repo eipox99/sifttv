@@ -4,6 +4,7 @@ import { SessionProvider } from "next-auth/react";
 import { ReactNode } from "react";
 import { Session } from "next-auth";
 
+import { CategoryFavoritesProvider } from "@/components/category-favorites-store";
 import { FavoritesProvider } from "@/components/favorites-store";
 import { PreferencesProvider } from "@/components/preferences-store";
 import { PlayerProvider } from "@/components/stream-player";
@@ -29,7 +30,9 @@ export function Providers({ children, session, playbackPreferences }: ProvidersP
     <SessionProvider session={session}>
       <PreferencesProvider initial={playbackPreferences}>
         <FavoritesProvider>
-          <PlayerProvider>{children}</PlayerProvider>
+          <CategoryFavoritesProvider>
+            <PlayerProvider>{children}</PlayerProvider>
+          </CategoryFavoritesProvider>
         </FavoritesProvider>
       </PreferencesProvider>
     </SessionProvider>

@@ -39,13 +39,16 @@ export default async function CategoryPage({
     // Merge into the persistent master language list.
     addKnownLanguages(availableLanguages);
 
-    const categoryName = categoryResponse.data[0]?.name ?? "Unknown category";
+    const category = categoryResponse.data[0];
+    const categoryName = category?.name ?? "Unknown category";
+    const boxArtUrl = category?.box_art_url?.replace("{width}", "320").replace("{height}", "430");
     const initialPopular = streamsResponse.data;
 
     return (
       <CategoryExplorer
         categoryId={id}
         categoryName={categoryName}
+        boxArtUrl={boxArtUrl}
         initialPopular={initialPopular}
         initialCursor={streamsResponse.cursor}
         initialSort={initialSort}

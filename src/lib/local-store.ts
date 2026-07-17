@@ -19,6 +19,16 @@ export type FavoriteRecord = {
   updatedAt: string;
 };
 
+export type FavoriteCategoryRecord = {
+  id: string;
+  userId: string;
+  categoryId: string;
+  categoryName: string;
+  boxArtUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type SnapshotStreamRecord = {
   id: string;
   snapshotId: string;
@@ -139,6 +149,20 @@ function initializeDatabase(db: DatabaseSync) {
 
     CREATE INDEX IF NOT EXISTS favorites_user_created_idx
       ON favorites(user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS favorite_categories (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      category_name TEXT NOT NULL,
+      box_art_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(user_id, category_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS favorite_categories_user_created_idx
+      ON favorite_categories(user_id, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS category_snapshots (
       id TEXT PRIMARY KEY,
@@ -529,6 +553,98 @@ export function migrateFavoritesUserId(oldUserId: string, newUserId: string) {
   getLocalDb()
     .prepare(`
       UPDATE favorites SET user_id = ? WHERE user_id = ?
+    `)
+    .run(newUserId, oldUserId);
+}
+
+export function listFavoriteCategories(userId: string) {
+  const statement = getLocalDb().prepare(`
+    SELECT
+      id,
+      user_id as userId,
+      category_id as categoryId,
+      category_name as categoryName,
+      box_art_url as boxArtUrl,
+      created_at as createdAt,
+      updated_at as updatedAt
+    FROM favorite_categories
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+  `);
+
+  return statement.all(userId) as FavoriteCategoryRecord[];
+}
+
+export function upsertFavoriteCategory(
+  userId: string,
+  input: {
+    categoryId: string;
+    categoryName: string;
+    boxArtUrl?: string | null;
+  }
+) {
+  const existing = getLocalDb()
+    .prepare(`
+      SELECT id
+      FROM favorite_categories
+      WHERE user_id = ? AND category_id = ?
+      LIMIT 1
+    `)
+    .get(userId, input.categoryId) as { id: string } | undefined;
+
+  const timestamp = nowIso();
+  const id = existing?.id ?? randomUUID();
+
+  getLocalDb().prepare(`
+    INSERT INTO favorite_categories (
+      id, user_id, category_id, category_name, box_art_url, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, category_id) DO UPDATE SET
+      category_name = excluded.category_name,
+      box_art_url = excluded.box_art_url,
+      updated_at = excluded.updated_at
+  `).run(
+    id,
+    userId,
+    input.categoryId,
+    input.categoryName,
+    input.boxArtUrl ?? null,
+    timestamp,
+    timestamp
+  );
+
+  return getLocalDb()
+    .prepare(`
+      SELECT
+        id,
+        user_id as userId,
+        category_id as categoryId,
+        category_name as categoryName,
+        box_art_url as boxArtUrl,
+        created_at as createdAt,
+        updated_at as updatedAt
+      FROM favorite_categories
+      WHERE user_id = ? AND category_id = ?
+      LIMIT 1
+    `)
+    .get(userId, input.categoryId) as FavoriteCategoryRecord;
+}
+
+export function deleteFavoriteCategory(userId: string, categoryId: string) {
+  getLocalDb()
+    .prepare(`
+      DELETE FROM favorite_categories
+      WHERE user_id = ? AND category_id = ?
+    `)
+    .run(userId, categoryId);
+}
+
+export function migrateFavoriteCategoriesUserId(oldUserId: string, newUserId: string) {
+  if (oldUserId === newUserId) return;
+  getLocalDb()
+    .prepare(`
+      UPDATE favorite_categories SET user_id = ? WHERE user_id = ?
     `)
     .run(newUserId, oldUserId);
 }

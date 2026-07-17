@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ChannelSortSelect } from "@/components/channel-sort-select";
@@ -23,12 +24,23 @@ type FavoriteItem = {
   url: string;
 };
 
+type FavoriteCategory = {
+  id: string;
+  categoryId: string;
+  categoryName: string;
+  boxArtUrl: string | null;
+};
+
 export function FavoritesPage() {
+  const [tab, setTab] = useState<"channels" | "categories">("channels");
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<ChannelSortKey>(DEFAULT_CHANNEL_SORT);
   const [pollTick, setPollTick] = useState(0);
+
+  const [favCategories, setFavCategories] = useState<FavoriteCategory[]>([]);
+  const [loadingCats, setLoadingCats] = useState(true);
 
   useEffect(() => {
     const interval = setInterval(() => setPollTick((c) => c + 1), 30000);
@@ -56,17 +68,33 @@ export function FavoritesPage() {
     }
   }, []);
 
+  const loadCategories = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await fetch("/api/favorites/categories", { cache: "no-store", signal });
+      const payload = await response.json();
+      if (response.ok) {
+        setFavCategories(payload.data ?? []);
+      }
+    } catch { /* ignore */ }
+    finally {
+      if (!signal?.aborted) {
+        setLoadingCats(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal);
+    void loadCategories(controller.signal);
     return () => controller.abort();
-  }, [load, pollTick]);
+  }, [load, loadCategories, pollTick]);
 
   useEffect(() => {
-    const handler = () => void load();
+    const handler = () => { void load(); void loadCategories(); };
     window.addEventListener(FAVORITES_UPDATED_EVENT, handler);
     return () => window.removeEventListener(FAVORITES_UPDATED_EVENT, handler);
-  }, [load]);
+  }, [load, loadCategories]);
 
   const liveFavorites = useMemo(
     () =>
@@ -112,34 +140,76 @@ export function FavoritesPage() {
       <div className="panel">
         <h1>Favorites</h1>
       </div>
-      {loading ? <div className="pill">Loading favorites</div> : null}
-      {error ? <div className="error-box">{error}</div> : null}
-      {favorites.length > 0 ? (
-        <div className="list-toolbar">
-          <ChannelSortSelect value={sortKey} onChange={setSortKey} ariaLabel="Sort favorites" />
-        </div>
-      ) : null}
-      {liveFavorites.length > 0 ? (
-        <div className="stack-sm">
-          <div className="section-head">
-            <h2>Live</h2>
-            <span className="pill">{liveFavorites.length}</span>
+
+      <div className="segmented">
+        <button
+          className={tab === "channels" ? "segment active" : "segment"}
+          onClick={() => setTab("channels")}
+          type="button"
+        >
+          Channels
+          {favorites.length > 0 ? <span className="pill" style={{ marginLeft: "6px" }}>{favorites.length}</span> : null}
+        </button>
+        <button
+          className={tab === "categories" ? "segment active" : "segment"}
+          onClick={() => setTab("categories")}
+          type="button"
+        >
+          Categories
+          {favCategories.length > 0 ? <span className="pill" style={{ marginLeft: "6px" }}>{favCategories.length}</span> : null}
+        </button>
+      </div>
+
+      {tab === "categories" ? (
+        favCategories.length > 0 ? (
+          <div className="category-list">
+            {favCategories.map((cat) => (
+              <Link key={cat.id} href={`/category/${cat.categoryId}`} className="search-category-row">
+                {cat.boxArtUrl ? (
+                  <img src={cat.boxArtUrl} alt={cat.categoryName} className="search-category-thumb" loading="lazy" />
+                ) : null}
+                <div>
+                  <strong>{cat.categoryName}</strong>
+                  <div className="muted">Open category directory</div>
+                </div>
+              </Link>
+            ))}
           </div>
-          <div className="stream-grid">{liveFavorites.map(renderCard)}</div>
-        </div>
-      ) : null}
-      {offlineFavorites.length > 0 ? (
-        <div className="stack-sm">
-          <div className="section-head">
-            <h2>Offline</h2>
-            <span className="pill">{offlineFavorites.length}</span>
-          </div>
-          <div className="stream-grid">{offlineFavorites.map(renderCard)}</div>
-        </div>
-      ) : null}
-      {!loading && !error && favorites.length === 0 ? (
-        <div className="panel muted">Save channels from any stream card and they will show up here.</div>
-      ) : null}
+        ) : (
+          !loadingCats ? <div className="panel muted">No favorite categories yet. Save them from any category page.</div> : <div className="pill">Loading categories</div>
+        )
+      ) : (
+        <>
+          {loading ? <div className="pill">Loading favorites</div> : null}
+          {error ? <div className="error-box">{error}</div> : null}
+          {favorites.length > 0 ? (
+            <div className="list-toolbar">
+              <ChannelSortSelect value={sortKey} onChange={setSortKey} ariaLabel="Sort favorites" />
+            </div>
+          ) : null}
+          {liveFavorites.length > 0 ? (
+            <div className="stack-sm">
+              <div className="section-head">
+                <h2>Live</h2>
+                <span className="pill">{liveFavorites.length}</span>
+              </div>
+              <div className="stream-grid">{liveFavorites.map(renderCard)}</div>
+            </div>
+          ) : null}
+          {offlineFavorites.length > 0 ? (
+            <div className="stack-sm">
+              <div className="section-head">
+                <h2>Offline</h2>
+                <span className="pill">{offlineFavorites.length}</span>
+              </div>
+              <div className="stream-grid">{offlineFavorites.map(renderCard)}</div>
+            </div>
+          ) : null}
+          {!loading && !error && favorites.length === 0 ? (
+            <div className="panel muted">Save channels from any stream card and they will show up here.</div>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }

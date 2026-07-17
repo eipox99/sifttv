@@ -1140,7 +1140,8 @@ h3 {
   border-color: color-mix(in srgb, var(--accent-2) 45%, transparent);
 }
 
-.favorite-button {
+.favorite-button,
+.category-favorite-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1152,12 +1153,14 @@ h3 {
   color: var(--ink-soft);
 }
 
-.favorite-button.is-favorite {
+.favorite-button.is-favorite,
+.category-favorite-button.is-favorite {
   color: #f5b301;
   border-color: color-mix(in srgb, #f5b301 55%, transparent);
 }
 
-.favorite-button.is-favorite .favorite-star {
+.favorite-button.is-favorite .favorite-star,
+.category-favorite-button.is-favorite .favorite-star {
   color: #f5b301;
 }
 
