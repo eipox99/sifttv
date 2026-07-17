@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { CategoryCard } from "@/components/category-card";
 import { ChannelSortSelect } from "@/components/channel-sort-select";
 import { StreamCard } from "@/components/stream-card";
 import { FAVORITES_UPDATED_EVENT } from "@/lib/favorites-events";
@@ -162,17 +162,14 @@ export function FavoritesPage() {
 
       {tab === "categories" ? (
         favCategories.length > 0 ? (
-          <div className="category-list">
+          <div className="category-grid">
             {favCategories.map((cat) => (
-              <Link key={cat.id} href={`/category/${cat.categoryId}`} className="search-category-row">
-                {cat.boxArtUrl ? (
-                  <img src={cat.boxArtUrl} alt={cat.categoryName} className="search-category-thumb" loading="lazy" />
-                ) : null}
-                <div>
-                  <strong>{cat.categoryName}</strong>
-                  <div className="muted">Open category directory</div>
-                </div>
-              </Link>
+              <CategoryCard
+                key={cat.id}
+                id={cat.categoryId}
+                name={cat.categoryName}
+                boxArtUrl={cat.boxArtUrl ?? ""}
+              />
             ))}
           </div>
         ) : (
