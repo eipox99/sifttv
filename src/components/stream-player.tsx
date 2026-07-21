@@ -365,19 +365,33 @@ export function StreamPlayerModal({ target, onClose, standalone }: { target: Wat
         const data = (await response.json()) as {
           viewerCount?: number | null;
           startedAt?: string | null;
+          title?: string | null;
+          categoryName?: string | null;
+          categoryId?: string | null;
+          thumbnailUrl?: string | null;
         };
         if (cancelled) {
           return;
         }
         setViewerCount(typeof data.viewerCount === "number" ? data.viewerCount : null);
-        // Refresh the start time too (streams can crash/restart, and Twitch
-        // resets uptime after 48h). Only update state when it actually changes.
-        if (data.startedAt) {
-          const nextStarted = data.startedAt;
-          setMeta((current) =>
-            current.startedAt === nextStarted ? current : { ...current, startedAt: nextStarted }
-          );
-        }
+        setMeta((current) => {
+          const next: typeof current = {
+            ...current,
+            startedAt: data.startedAt ?? current.startedAt,
+            title: data.title ?? current.title,
+            categoryName: data.categoryName ?? current.categoryName,
+            categoryId: data.categoryId ?? current.categoryId,
+            thumbnailUrl: data.thumbnailUrl ?? current.thumbnailUrl
+          };
+          // Only update if something actually changed to avoid unnecessary renders.
+          return next.startedAt === current.startedAt &&
+            next.title === current.title &&
+            next.categoryName === current.categoryName &&
+            next.categoryId === current.categoryId &&
+            next.thumbnailUrl === current.thumbnailUrl
+            ? current
+            : next;
+        });
       } catch {
         // transient failure; keep the last known values
       }
